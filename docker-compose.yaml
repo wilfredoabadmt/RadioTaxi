@@ -24,6 +24,8 @@ services:
     environment:
       DATABASE_URL: postgres://${DATABASE_USER:-radiotaxi}:${DATABASE_PASSWORD:-radiotaxi}@postgres:5432/${DATABASE_NAME:-radiotaxi}
       PORT: 3000
+    labels:
+      - "coolify.managed=true"
 
   realtime:
     build:
@@ -41,6 +43,8 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
       NEXT_PUBLIC_REALTIME_URL: ${NEXT_PUBLIC_REALTIME_URL}
+    labels:
+      - "coolify.managed=true"
 
 volumes:
   postgres-data: {}
