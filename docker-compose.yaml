@@ -1,0 +1,46 @@
+version: '3.9'
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-radiotaxi}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-radiotaxi}
+      POSTGRES_DB: ${DATABASE_NAME:-radiotaxi}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U radiotaxi"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${DATABASE_USER:-radiotaxi}:${DATABASE_PASSWORD:-radiotaxi}@postgres:5432/${DATABASE_NAME:-radiotaxi}
+      PORT: 3000
+
+  realtime:
+    build:
+      context: .
+      dockerfile: services/realtime/Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: 3002
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: apps/dispatch-dashboard/Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      NEXT_PUBLIC_REALTIME_URL: ${NEXT_PUBLIC_REALTIME_URL}
+
+volumes:
+  postgres-data: {}
