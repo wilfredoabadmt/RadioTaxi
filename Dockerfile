@@ -1,7 +1,10 @@
-# Root Dockerfile for RadioTaxi (API focus)
-FROM node:20-alpine AS builder
+# Root Dockerfile for RadioTaxi (API focus) - Using Debian Slim for better Prisma compatibility
+FROM node:20-slim AS builder
 
 WORKDIR /app
+
+# Install OpenSSL for Prisma
+RUN apt-get update -y && apt-get install -y openssl
 
 # Copy workspace meta
 COPY package.json package-lock.json* tsconfig.base.json ./
@@ -20,8 +23,11 @@ RUN npx prisma generate
 RUN npm run build
 
 # Runner stage
-FROM node:20-alpine
+FROM node:20-slim
 WORKDIR /app
+
+# Install OpenSSL in runner too
+RUN apt-get update -y && apt-get install -y openssl
 
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/services/api/dist ./dist
@@ -31,10 +37,6 @@ COPY --from=builder /app/services/api/prisma ./prisma
 EXPOSE 3000
 ENV PORT 3000
 ENV NODE_ENV production
-
-# Add healthcheck
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost:3000/api || exit 1
 
 # Start with detailed logging
 CMD ["sh", "-c", "echo 'Starting API Service...' && (npx prisma migrate deploy || echo 'Warning: Migration failed, check DATABASE_URL') && node dist/main.js"]
