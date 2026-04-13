@@ -1,0 +1,29 @@
+{
+  "name": "radiotaxi-platform",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@10",
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/**/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=services-api --workspace=app-dispatch-dashboard",
+    "dev:all": "npm run dev --workspaces",
+    "build": "npm run build --workspaces",
+    "lint": "npm run lint --workspaces",
+    "start": "npm run start --workspaces"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6"
+  },
+  "dependencies": {
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
+  },
+  "overrides": {
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
+  }
+}
