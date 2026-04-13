@@ -38,4 +38,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget --quiet --tries=1 --spider http://localhost:3002 || exit 1
 
 # Start script
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/index.js"]
