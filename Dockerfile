@@ -38,8 +38,9 @@ ENV PORT 3000
 ENV NODE_ENV production
 
 # Improved Healthcheck with longer start period (30s)
+# Pointing to /api which is the welcome endpoint
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost:3000/api/users || exit 1
+  CMD wget --quiet --tries=1 --spider http://localhost:3000/api || exit 1
 
 # Start script
 CMD ["sh", "-c", "echo 'Starting API Service...' && (npx prisma migrate deploy || echo 'Warning: Migration failed, check DATABASE_URL') && node dist/main.js"]
