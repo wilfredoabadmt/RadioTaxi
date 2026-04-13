@@ -1,7 +1,6 @@
-# Multi-stage Dockerfile for NestJS + Prisma
 FROM node:20-alpine AS builder
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json* ./
 COPY services/api/package.json ./services/api/
 RUN npm install
 COPY services/api ./services/api
