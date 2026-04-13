@@ -10,6 +10,7 @@ import { MapsModule } from './maps/maps.module';
 import { TripFaresModule } from './trip-fares/trip-fares.module';
 import { CorporateReportsModule } from './corporate-reports/corporate-reports.module';
 import { DriversModule } from './drivers/drivers.module';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
@@ -25,7 +26,7 @@ import { DriversModule } from './drivers/drivers.module';
     CorporateReportsModule,
     DriversModule
   ],
-  controllers: [],
+  controllers: [AppController],
   providers: []
 })
 export class AppModule {}
