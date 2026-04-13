@@ -1,18 +1,20 @@
 # Dockerfile for RadioTaxi Dashboard
 FROM node:20-slim AS builder
 
-# Increase memory limit for Node.js build process
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 
 WORKDIR /app
 COPY package.json package-lock.json* tsconfig.base.json ./
 COPY apps/dispatch-dashboard/package.json ./apps/dispatch-dashboard/
 
-# Install only essential dependencies for the build
 RUN npm install --no-audit --no-fund
 
 COPY apps/dispatch-dashboard ./apps/dispatch-dashboard
 WORKDIR /app/apps/dispatch-dashboard
+
+# Ensure public directory exists so Docker doesn't fail on COPY
+RUN mkdir -p public
+
 RUN npm run build
 
 FROM node:20-slim AS runner
