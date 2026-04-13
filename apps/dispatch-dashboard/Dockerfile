@@ -2,7 +2,7 @@ FROM node:20-alpine AS base
 FROM base AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json* tsconfig.base.json ./
 COPY apps/dispatch-dashboard/package.json ./apps/dispatch-dashboard/
 RUN npm install
 FROM base AS builder
