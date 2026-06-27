@@ -7,7 +7,7 @@ export class UsersService {
 
   findAll() {
     return this.prisma.user.findMany({
-      include: { 
+      include: {
         driver: true
       }
     });
@@ -16,9 +16,15 @@ export class UsersService {
   findOne(id: number) {
     return this.prisma.user.findUnique({
       where: { id },
-      include: { 
-        driver: true 
+      include: {
+        driver: true
       }
+    });
+  }
+
+  findByEmail(email: string) {
+    return this.prisma.user.findUnique({
+      where: { email }
     });
   }
 }

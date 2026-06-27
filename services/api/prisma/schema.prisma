@@ -1,3 +1,14 @@
+// ============================================================================
+// RadioTaxi - Esquema unificado (origen único de verdad)
+// ----------------------------------------------------------------------------
+// Geometría: lat/lng como Float (coincide con servicios, frontend y realtime).
+// Estados:
+//   Vehicle/Driver   -> available | busy | offline
+//   TripRequest      -> PENDING | ACCEPTED | COMPLETED | CANCELLED
+//   Trip             -> ASSIGNED | IN_PROGRESS | COMPLETED | CANCELLED
+// PostGIS queda como opcional a futuro (no requerido para este esquema base).
+// ============================================================================
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,191 +18,420 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Company {
-  id                Int                @id @default(autoincrement())
-  name              String
-  createdAt         DateTime           @default(now())
+// ---------------------------------------------------------------------------
+// Empresa / Organización
+// ---------------------------------------------------------------------------
 
+model Company {
+  id               Int      @id @default(autoincrement())
+  name             String
+  companyType      String? // 'operator' | 'corporate_client' | ...
+  nit              String?
+  commerceRegistry String?
+  address          String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  users             User[]
+  costCenters       CostCenter[]
+  corporateAccounts CorporateAccount[]
+  vehicles          Vehicle[]
   tripRequests      TripRequest[]
   pricingRules      PricingRule[]
   geofences         Geofence[]
   complianceRecords ComplianceRecord[]
   corporateReports  CorporateReport[]
+  callRecords       CallRecord[]
+  callerProfiles    CallerProfile[]
+  auditLogs         AuditLog[]
 }
+
+// ---------------------------------------------------------------------------
+// Usuarios / Conductores / Vehículos
+// ---------------------------------------------------------------------------
 
 model User {
   id        Int      @id @default(autoincrement())
   email     String   @unique
   password  String
   name      String?
-  role      String   @default("USER") // USER | DRIVER | ADMIN
+  role      String   @default("USER") // USER | DRIVER | DISPATCHER | ADMIN
+  phone     String?
+  status    String   @default("active")
+  companyId Int?
+  company   Company? @relation(fields: [companyId], references: [id])
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  driver        Driver?
-  tripRequests  TripRequest[] @relation("CustomerTrips")
+  driver         Driver?
+  tripRequests   TripRequest[]   @relation("CustomerTrips")
+  callsInitiated CallRecord[]
+  callerProfiles CallerProfile[]
+  auditActions   AuditLog[]
 }
 
 model Driver {
-  id        Int   @id @default(autoincrement())
-  userId    Int   @unique
-  user      User  @relation(fields: [userId], references: [id])
+  id              Int       @id @default(autoincrement())
+  userId          Int       @unique
+  user            User      @relation(fields: [userId], references: [id])
+  licenseNumber   String?
+  licenseExpiry   DateTime?
+  status          String    @default("available") // available | busy | offline
+  experienceYears Int?
+  currentLat      Float?
+  currentLng      Float?
+  createdAt       DateTime  @default(now())
 
-  createdAt DateTime @default(now())
-
-  vehicle  Vehicle[]
-  trips     Trip[]
-  tripRequests TripRequest[]
-
+  vehicle           Vehicle[]
+  trips             Trip[]
+  tripRequests      TripRequest[]
+  documents         DriverDocument[]
   complianceRecords ComplianceRecord[]
 }
 
-model Vehicle {
-  id        Int     @id @default(autoincrement())
-  plate     String  @unique
-  driverId  Int?
-  driver    Driver? @relation(fields: [driverId], references: [id])
+model DriverDocument {
+  id             Int       @id @default(autoincrement())
+  driverId       Int
+  driver         Driver    @relation(fields: [driverId], references: [id])
+  documentType   String
+  documentNumber String
+  issuedAt       DateTime?
+  expiresAt      DateTime?
+  fileUrl        String?
+  verified       Boolean   @default(false)
+  createdAt      DateTime  @default(now())
 
-  createdAt DateTime @default(now())
-
-  trips Trip[]
+  @@index([driverId])
 }
 
+model Vehicle {
+  id          Int      @id @default(autoincrement())
+  plate       String   @unique
+  driverId    Int?
+  driver      Driver?  @relation(fields: [driverId], references: [id])
+  companyId   Int?
+  company     Company? @relation(fields: [companyId], references: [id])
+  brand       String?
+  model       String?
+  year        Int?
+  vehicleType String? // 'sedan' | 'suv' | 'van' | ...
+  color       String?
+  status      String   @default("available") // available | busy | offline
+  gpsDeviceId String?
+  currentLat  Float?
+  currentLng  Float?
+  createdAt   DateTime @default(now())
+
+  trips Trip[]
+
+  @@index([companyId])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Solicitudes y viajes
+// ---------------------------------------------------------------------------
+
 model TripRequest {
-  id                 Int       @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  // 👤 RELACIONES
-  customerId         Int
-  customer           User      @relation("CustomerTrips", fields: [customerId], references: [id])
+  customerId Int
+  customer   User @relation("CustomerTrips", fields: [customerId], references: [id])
 
-  companyId          Int?
-  company            Company?  @relation(fields: [companyId], references: [id])
+  companyId Int?
+  company   Company? @relation(fields: [companyId], references: [id])
 
-  driverId           Int?
-  driver             Driver?   @relation(fields: [driverId], references: [id])
+  driverId Int?
+  driver   Driver? @relation(fields: [driverId], references: [id])
 
-  // 📍 UBICACIÓN
-  originAddress      String?
-  originLat          Float?
-  originLng          Float?
+  originAddress String?
+  originLat     Float?
+  originLng     Float?
 
   destinationAddress String?
   destinationLat     Float?
   destinationLng     Float?
 
-  // ⏱ TIEMPOS
-  requestedAt        DateTime  @default(now()) // 👈 nuevo (clave)
-  scheduledAt        DateTime?
-  acceptedAt         DateTime?
-  completedAt        DateTime?
+  requestedAt DateTime  @default(now())
+  scheduledAt DateTime?
+  acceptedAt  DateTime?
+  completedAt DateTime?
 
-  status             String    @default("PENDING") // PENDING | ACCEPTED | COMPLETED | CANCELLED
+  status String @default("PENDING") // PENDING | ACCEPTED | COMPLETED | CANCELLED
 
-  trip               Trip?
+  trip                 Trip?
+  corporateReservation CorporateReservation?
 
   @@index([customerId])
   @@index([companyId])
   @@index([driverId])
+  @@index([status])
 }
 
 model Trip {
-  id            Int         @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
   tripRequestId Int         @unique
   tripRequest   TripRequest @relation(fields: [tripRequestId], references: [id])
 
-  driverId      Int
-  driver        Driver      @relation(fields: [driverId], references: [id])
+  driverId Int
+  driver   Driver @relation(fields: [driverId], references: [id])
 
-  vehicleId     Int
-  vehicle       Vehicle     @relation(fields: [vehicleId], references: [id])
+  vehicleId Int
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id])
 
-  fareTotal     Float       @default(0)
+  // Tarifa
+  fareTotal      Float   @default(0)
+  fareBase       Float   @default(0)
+  fareDistance   Float   @default(0)
+  fareTime       Float   @default(0)
+  fareSurcharges Float   @default(0)
+  discount       Float   @default(0)
+  paymentMethod  String? // 'cash' | 'card' | 'corporate_account'
 
-  startedAt     DateTime    @default(now())
-  completedAt   DateTime?
+  // Medición
+  distanceMeters  Int?
+  durationSeconds Int?
 
-  status        String      @default("COMPLETED")
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
 
-  fares         TripFare[]
+  status String @default("ASSIGNED") // ASSIGNED | IN_PROGRESS | COMPLETED | CANCELLED
+
+  fares    TripFare[]
+  segments TripSegment[]
 
   @@index([driverId])
+  @@index([vehicleId])
+  @@index([status])
 }
 
-model TripFare {
-  id              Int         @id @default(autoincrement())
+model TripSegment {
+  id                    Int    @id @default(autoincrement())
+  tripId                Int
+  trip                  Trip   @relation(fields: [tripId], references: [id])
+  sequence              Int
+  legOriginAddress      String
+  legOriginLat          Float
+  legOriginLng          Float
+  legDestinationAddress String
+  legDestinationLat     Float
+  legDestinationLng     Float
+  legDistanceMeters     Int?
+  legDurationSeconds    Int?
 
-  tripId          Int
-  trip            Trip        @relation(fields: [tripId], references: [id])
-
-  pricingRuleId   Int
-  pricingRule     PricingRule @relation(fields: [pricingRuleId], references: [id])
-
-  baseFare        Float       @default(0)
-  distanceMeters  Int         @default(0)
-  durationSeconds Int         @default(0)
-  totalFare       Float       @default(0)
-
-  createdAt       DateTime    @default(now())
+  @@index([tripId])
 }
+
+// ---------------------------------------------------------------------------
+// Tarificación / Geofences
+// ---------------------------------------------------------------------------
 
 model PricingRule {
-  id             Int        @id @default(autoincrement())
-
-  companyId      Int
-  company        Company    @relation(fields: [companyId], references: [id])
-
-  type           String     @default("STANDARD")
-
-  baseFare       Float      @default(0)
-  kmRate         Float      @default(0)
-  minuteRate     Float      @default(0)
-  minFare        Float      @default(0)
-
-  tollSurcharge  Float      @default(0)
-  peakMultiplier Float      @default(1.0)
-
-  areaGeoJson    String?
-
-  tripFares      TripFare[]
-}
-
-model Geofence {
-  id          Int     @id @default(autoincrement())
-
-  companyId   Int
-  company     Company @relation(fields: [companyId], references: [id])
-
-  name        String?
-  type        String  @default("ZONE")
-  surcharge   String  @default("0")
-
-  areaGeoJson String? @db.Text
-}
-
-model ComplianceRecord {
-  id        Int     @id @default(autoincrement())
-
-  driverId  Int
-  driver    Driver  @relation(fields: [driverId], references: [id])
+  id Int @id @default(autoincrement())
 
   companyId Int
   company   Company @relation(fields: [companyId], references: [id])
 
+  name String @default("Standard")
+  type String @default("STANDARD")
+
+  baseFare   Float @default(0)
+  kmRate     Float @default(0)
+  minuteRate Float @default(0)
+  minFare    Float @default(0)
+
+  tollSurcharge     Float @default(0)
+  geofenceSurcharge Float @default(0)
+  peakMultiplier    Float @default(1.0)
+
+  areaGeoJson String?
+
+  active Boolean @default(true)
+
+  tripFares TripFare[]
+}
+
+model Geofence {
+  id Int @id @default(autoincrement())
+
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id])
+
+  name        String?
+  type        String  @default("ZONE")
+  surcharge   Float   @default(0)
+  areaGeoJson String? @db.Text
+}
+
+model TripFare {
+  id Int @id @default(autoincrement())
+
+  tripId Int
+  trip   Trip @relation(fields: [tripId], references: [id])
+
+  pricingRuleId Int
+  pricingRule   PricingRule @relation(fields: [pricingRuleId], references: [id])
+
+  baseFare        Float @default(0)
+  distanceMeters  Int   @default(0)
+  durationSeconds Int   @default(0)
+  totalFare       Float @default(0)
+
   createdAt DateTime @default(now())
+
+  @@index([tripId])
+}
+
+// ---------------------------------------------------------------------------
+// Corporate / B2B
+// ---------------------------------------------------------------------------
+
+model CostCenter {
+  id           Int      @id @default(autoincrement())
+  companyId    Int
+  company      Company  @relation(fields: [companyId], references: [id])
+  code         String
+  name         String
+  description  String?
+  budgetCenter String?
+  createdAt    DateTime @default(now())
+
+  corporateReservations CorporateReservation[]
+
+  @@index([companyId])
+}
+
+model CorporateAccount {
+  id                Int      @id @default(autoincrement())
+  companyId         Int
+  company           Company  @relation(fields: [companyId], references: [id])
+  clientCompanyName String
+  contactName       String?
+  contactEmail      String?
+  paymentTerms      String?
+  creditLimit       Float    @default(0)
+  createdAt         DateTime @default(now())
+
+  corporateReservations CorporateReservation[]
+
+  @@index([companyId])
+}
+
+model CorporateReservation {
+  id                 Int              @id @default(autoincrement())
+  corporateAccountId Int
+  corporateAccount   CorporateAccount @relation(fields: [corporateAccountId], references: [id])
+  tripRequestId      Int              @unique
+  tripRequest        TripRequest      @relation(fields: [tripRequestId], references: [id])
+  reservationStatus  String           @default("pending")
+  tripReason         String?
+  costCenterId       Int?
+  costCenter         CostCenter?      @relation(fields: [costCenterId], references: [id])
+  estimatedCost      Float?
+  createdAt          DateTime         @default(now())
+
+  @@index([corporateAccountId])
 }
 
 model CorporateReport {
-  id         Int      @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  companyId  Int
-  company    Company  @relation(fields: [companyId], references: [id])
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id])
 
   title      String
-  reportType String   // 👈 agregado
+  reportType String
   data       Json?
 
-  createdAt  DateTime @default(now())
+  periodStart DateTime?
+  periodEnd   DateTime?
+  fileUrl     String?
+
+  createdAt DateTime @default(now())
 
   @@index([companyId])
+}
+
+// ---------------------------------------------------------------------------
+// Cumplimiento / Regulatorio
+// ---------------------------------------------------------------------------
+
+model ComplianceRecord {
+  id Int @id @default(autoincrement())
+
+  driverId  Int
+  driver    Driver  @relation(fields: [driverId], references: [id])
+  companyId Int
+  company   Company @relation(fields: [companyId], references: [id])
+
+  ticNumber        String?
+  cudapNumber      String?
+  nit              String?
+  commerceRegistry String?
+  validUntil       DateTime?
+  status           String    @default("pending")
+  createdAt        DateTime  @default(now())
+
+  @@index([driverId])
+  @@index([companyId])
+}
+
+// ---------------------------------------------------------------------------
+// Telefonía (VoIP / Asterisk)
+// ---------------------------------------------------------------------------
+
+model CallRecord {
+  id              Int       @id @default(autoincrement())
+  callUuid        String    @unique
+  companyId       Int?
+  company         Company?  @relation(fields: [companyId], references: [id])
+  fromNumber      String?
+  toNumber        String?
+  callerId        String?
+  startedAt       DateTime?
+  endedAt         DateTime?
+  durationSeconds Int?
+  recordingUrl    String?
+  tripId          Int?
+  customerId      Int?
+  customer        User?     @relation(fields: [customerId], references: [id])
+  createdAt       DateTime  @default(now())
+
+  @@index([companyId])
+  @@index([fromNumber])
+}
+
+model CallerProfile {
+  id               Int      @id @default(autoincrement())
+  companyId        Int
+  company          Company  @relation(fields: [companyId], references: [id])
+  phoneNumber      String
+  customerId       Int?
+  customer         User?    @relation(fields: [customerId], references: [id])
+  historyNotes     String?
+  frequentCustomer Boolean  @default(false)
+  createdAt        DateTime @default(now())
+
+  @@unique([companyId, phoneNumber])
+  @@index([phoneNumber])
+}
+
+// ---------------------------------------------------------------------------
+// Auditoría
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id              Int      @id @default(autoincrement())
+  companyId       Int?
+  company         Company? @relation(fields: [companyId], references: [id])
+  entityType      String
+  entityId        Int?
+  action          String
+  performedBy     Int?
+  performedByUser User?    @relation(fields: [performedBy], references: [id])
+  data            Json?
+  timestamp       DateTime @default(now())
+
+  @@index([entityType, entityId])
 }

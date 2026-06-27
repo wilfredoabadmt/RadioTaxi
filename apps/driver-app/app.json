@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "RadioTaxi Conductor",
+    "slug": "radiotaxi-driver",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "backgroundColor": "#1e3a8a"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.radiotaxi.driver",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Necesitamos tu ubicación para mostrarla al despachador y al cliente durante el viaje."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1e3a8a"
+      },
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
+      "package": "com.radiotaxi.driver"
+    },
+    "plugins": ["expo-location"],
+    "extra": {
+      "eas": {
+        "projectId": ""
+      }
+    }
+  }
+}

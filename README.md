@@ -57,9 +57,41 @@ npm run dev
 - Dashboard: **http://localhost:3001**
 - API: **http://localhost:3000/api**
 
+## Base de datos
+
+El esquema vive en `services/api/prisma/schema.prisma` (origen único de verdad).
+La migración baseline está en `services/api/prisma/migrations/0_init_unified/`.
+
+### Aplicar el esquema
+
+```bash
+cd services/api
+# 1. Regenerar el cliente Prisma (si se edita el schema)
+npm run prisma:generate
+
+# 2. Crear/migrar la base de datos (requiere PostgreSQL activo en DATABASE_URL)
+npm run prisma:migrate
+# o, en producción:
+npx prisma migrate deploy
+```
+
+### Geometría
+
+Las ubicaciones (vehículos, geofences, orígenes/destinos) se almacenan como
+`Float` lat/lng, consistente con servicios, frontend y realtime.
+PostGIS queda como opcional para futuras consultas espaciales avanzadas.
+
+## Estados
+
+| Entidad | Valores |
+|---|---|
+| Vehicle / Driver | `available` \| `busy` \| `offline` |
+| TripRequest | `PENDING` \| `ACCEPTED` \| `COMPLETED` \| `CANCELLED` |
+| Trip | `ASSIGNED` \| `IN_PROGRESS` \| `COMPLETED` \| `CANCELLED` |
+
 ## Próximos pasos
 
-1. Instalar PostgreSQL y ejecutar schema.sql
+1. ~~Instalar PostgreSQL y ejecutar schema.sql~~ → usar `prisma migrate` (ver arriba)
 2. Configurar Asterisk para VoIP
-3. Añadir integración WebSocket para tiempo real
-4. Implementar autenticación y seguridad
+3. Conectar el servicio realtime a la base de datos (reemplazar datos mock)
+4. Implementar autenticación y seguridad (JWT + roles)
