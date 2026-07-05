@@ -4,4 +4,8 @@ dist/
 .env.*
 coverage/
 .DS_Store
-```
+
+# Build outputs
+.next/
+out/
+*.tsbuildinfo

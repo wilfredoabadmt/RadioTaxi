@@ -89,9 +89,37 @@ PostGIS queda como opcional para futuras consultas espaciales avanzadas.
 | TripRequest | `PENDING` \| `ACCEPTED` \| `COMPLETED` \| `CANCELLED` |
 | Trip | `ASSIGNED` \| `IN_PROGRESS` \| `COMPLETED` \| `CANCELLED` |
 
+## Despacho asistido por IA
+
+El módulo `ai` integra Google Gemini para asistir al despachador. Requiere
+`GEMINI_API_KEY` y `GEMINI_MODEL` en `services/api/.env`.
+
+| Endpoint | Rol | Descripción |
+|---|---|---|
+| `POST /api/ai/generate` | `ADMIN`, `DISPATCHER` | Generación libre de texto (genera costo). |
+| `POST /api/ai/dispatch/suggest` | `ADMIN`, `DISPATCHER` | Sugiere el mejor vehículo para una solicitud de viaje. |
+
+**`dispatch/suggest`** recibe una solicitud de viaje y la lista de vehículos
+disponibles, y devuelve:
+
+```json
+{
+  "recommendedVehicleId": 12,
+  "reason": "Vehículo más cercano al origen (~340 m).",
+  "rankedVehicles": [{ "vehicleId": 12, "distanceMeters": 340, "score": 0.0029 }],
+  "source": "ai"
+}
+```
+
+Funciona con **degradación elegante**: si no hay API key o Gemini falla, cae a
+una heurística determinista por distancia Haversine al origen (`source:
+"heuristic"`), de modo que el despacho nunca se bloquea por la IA.
+
 ## Próximos pasos
 
 1. ~~Instalar PostgreSQL y ejecutar schema.sql~~ → usar `prisma migrate` (ver arriba)
-2. Configurar Asterisk para VoIP
-3. Conectar el servicio realtime a la base de datos (reemplazar datos mock)
-4. Implementar autenticación y seguridad (JWT + roles)
+2. ~~Conectar el servicio realtime a la base de datos~~ → hecho
+3. ~~Implementar autenticación y seguridad (JWT + roles)~~ → hecho
+4. Configurar Asterisk para VoIP (módulo `services/telephony/`)
+5. Construir `apps/client-app/` (app de cliente para solicitar viajes)
+6. Mover la lógica de tarificación de `realtime/` a `services/pricing-engine/`
