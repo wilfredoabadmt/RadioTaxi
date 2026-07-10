@@ -1,7 +1,9 @@
-import { Controller, Post, Body, Get, Param, Request } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, ParseIntPipe, Request } from '@nestjs/common';
 import { TripRequestsService } from './trip-requests.service';
 import { CreateTripRequestDto } from './dto/create-trip-request.dto';
+import { CancelTripRequestDto } from './dto/cancel-trip-request.dto';
 import { Roles } from '../auth/roles.decorator';
+import { Audit } from '../common/decorators/audit.decorator';
 
 @Controller('trip-requests')
 export class TripRequestsController {
@@ -34,5 +36,17 @@ export class TripRequestsController {
   @Get(':id')
   findOne(@Param('id') id: string, @Request() req: any) {
     return this.tripRequestsService.findOne(Number(id), req.user.role, req.user.id);
+  }
+
+  // ✖️ Cancelar solicitud (pasajero dueño o despacho): PENDING|ACCEPTED → CANCELLED
+  @Roles('USER', 'ADMIN', 'DISPATCHER')
+  @Post(':id/cancel')
+  @Audit('CANCEL', 'TripRequest')
+  cancel(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: CancelTripRequestDto,
+    @Request() req: any,
+  ) {
+    return this.tripRequestsService.cancel(id, req.user.role, req.user.id, body.reason);
   }
 }

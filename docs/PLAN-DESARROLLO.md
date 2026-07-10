@@ -147,12 +147,12 @@ Monorepo npm workspaces (`apps/*`, `services/*`, `packages/**/*`). Stack: **Nest
 
 - [x] **1.1 — Auth en el socket de realtime.** Middleware `io.use()` que valide el JWT (mismo `JWT_SECRET` que la API) en el handshake. Rechazar conexiones sin token válido. Adjuntar `socket.data.user`. ✅ 2026-07-10 — Implementado middleware en `services/realtime/src/auth.ts` y conectado en `index.ts`.
 - [x] **1.2 — Autorización por evento en realtime.** `trip:assign`/`trip:complete` solo `ADMIN`/`DISPATCHER`; `vehicle:update` solo el `DRIVER` dueño del vehículo. Validar que el driver no mueva vehículos ajenos. ✅ 2026-07-10 — Controles de roles añadidos en los eventos del socket.
-- [ ] **1.3 — CORS restringido.** Reemplazar `cors:{origin:'*'}` por lista blanca desde env (`ALLOWED_ORIGINS`) en realtime **y** API. 🟡 2026-07-10 — Configurado `ALLOWED_ORIGINS` en `services/realtime`; falta replicar filtro estricto en `services/api`.
-- [ ] **1.4 — Login en el dashboard.** Página `/login`, guardar JWT (httpOnly cookie o storage), interceptor que añade `Authorization: Bearer`, guard de ruta que redirige a `/login`. Gatear a roles `ADMIN`/`DISPATCHER`.
-- [ ] **1.5 — Cerrar guards del API.** Añadir `@Roles` a `trips`, `vehicles`, `drivers`, `pricing`, `maps`, `trip-fares`, `corporate-reports` según matriz de permisos (definir en `docs/PERMISOS.md`).
+- [x] **1.3 — CORS restringido.** Reemplazar `cors:{origin:'*'}` por lista blanca desde env (`ALLOWED_ORIGINS`) en realtime **y** API. ✅ 2026-07-10 — `ALLOWED_ORIGINS` aplicado en `services/realtime/src/index.ts` y en `services/api/src/main.ts` (`enableCors` con lista blanca + `credentials`).
+- [x] **1.4 — Login en el dashboard.** Página `/login`, guardar JWT (httpOnly cookie o storage), interceptor que añade `Authorization: Bearer`, guard de ruta que redirige a `/login`. Gatear a roles `ADMIN`/`DISPATCHER`. ✅ 2026-07-10 — `apps/dispatch-dashboard/pages/login.tsx` + guard/redirección en `pages/index.tsx` con `Authorization: Bearer`.
+- [x] **1.5 — Cerrar guards del API.** Añadir `@Roles` a `trips`, `vehicles`, `drivers`, `pricing`, `maps`, `trip-fares`, `corporate-reports` según matriz de permisos. ✅ 2026-07-10 — `@Roles` en los 7 controladores; `maps`/`pricing` completados en esta iteración (geocode/calculate abiertos a todos los roles autenticados; reglas/geofences solo `DISPATCHER`/`ADMIN`).
 - [x] **1.6 — Endurecer JWT.** Config central del secreto; **fallar en arranque** si `JWT_SECRET` es el default en `NODE_ENV=production`. Evaluar refresh tokens y expiración configurable. ✅ 2026-07-10 — `resolveJwtSecret` en `api` y `realtime` valida longitud mínima (32 chars) y valor por defecto.
-- [ ] **1.7 — Rate limiting** en la API (`@nestjs/throttler`), especialmente en `/auth/*` y `/maps/*`.
-- [ ] **1.8 — Auditoría.** Poblar el modelo `AuditLog` (ya existe) con un interceptor Nest para acciones sensibles (login, asignaciones, cambios de estado).
+- [x] **1.7 — Rate limiting** en la API (`@nestjs/throttler`), especialmente en `/auth/*` y `/maps/*`. ✅ 2026-07-10 — `ThrottlerModule` (100 req/60s) + `ThrottlerGuard` global en `app.module.ts`.
+- [x] **1.8 — Auditoría.** Poblar el modelo `AuditLog` (ya existe) con un interceptor Nest para acciones sensibles (login, asignaciones, cambios de estado). ✅ 2026-07-10 — `AuditInterceptor` global + decorador `@Audit(...)` (`common/interceptors/audit.interceptor.ts`, `common/decorators/audit.decorator.ts`).
 
 **Criterio de aceptación:** un cliente sin token no puede leer datos ni emitir eventos; un `USER` no puede asignar viajes; el dashboard exige login.
 
@@ -163,8 +163,8 @@ Monorepo npm workspaces (`apps/*`, `services/*`, `packages/**/*`). Stack: **Nest
 **Objetivo:** cerrar el flujo completo solicitar → asignar → en curso → completar → cancelar, con estados intermedios y CRUD de flota.
 
 - [ ] **2.1 — Enums nativos Prisma.** Migrar los `String` de estado (Vehicle/Driver/TripRequest/Trip status, User.role, paymentMethod) a `enum` de Prisma. Migración + regenerar cliente. Elimina errores por strings mágicos.
-- [ ] **2.2 — Ciclo de vida del viaje en el API.** Endpoints/transiciones: `POST /trips/:id/start` (ASSIGNED→IN_PROGRESS), `POST /trips/:id/arrived`, `POST /trips/:id/complete`, `POST /trips/:id/cancel` (con motivo). Validar transiciones legales (máquina de estados).
-- [ ] **2.3 — Cancelación de solicitudes.** `POST /trip-requests/:id/cancel` (PENDING/ACCEPTED→CANCELLED) por el pasajero o despacho, liberando vehículo/conductor.
+- [x] **2.2 — Ciclo de vida del viaje en el API.** Endpoints/transiciones: `POST /trips/:id/start` (ASSIGNED→IN_PROGRESS), `POST /trips/:id/arrived`, `POST /trips/:id/complete`, `POST /trips/:id/cancel` (con motivo). Validar transiciones legales (máquina de estados). ✅ 2026-07-10 — Máquina de estados `ASSIGNED→ARRIVED→IN_PROGRESS→COMPLETED` (+`CANCELLED`) en `trips.service.ts` con `TRIP_TRANSITIONS`; endpoints con `@Roles`+`@Audit`; `complete`/`cancel` liberan conductor+vehículo y actualizan la solicitud en transacción; `create` ahora ocupa recursos (`busy`). Motivo de cancelación queda en `AuditLog`.
+- [x] **2.3 — Cancelación de solicitudes.** `POST /trip-requests/:id/cancel` (PENDING/ACCEPTED→CANCELLED) por el pasajero o despacho, liberando vehículo/conductor. ✅ 2026-07-10 — `cancel()` con scope por rol (dueño `USER` o despacho); si hay viaje asociado no terminal lo cancela y libera recursos en transacción.
 - [ ] **2.4 — CRUD de vehículos.** `POST/PATCH/DELETE /vehicles` (rol `ADMIN`/`DISPATCHER`). Alta con placa única, asignación a conductor.
 - [ ] **2.5 — CRUD de conductores.** `POST/PATCH/DELETE /drivers` + gestión de estado (available/busy/offline). Crear `User(role=DRIVER)` + `Driver` en transacción.
 - [ ] **2.6 — CRUD de usuarios.** Completar `users` (create/update/deactivate) para admin.
@@ -314,7 +314,7 @@ Monorepo npm workspaces (`apps/*`, `services/*`, `packages/**/*`). Stack: **Nest
 | Métrica | Estado hoy | Meta |
 |---|---|---|
 | Workspaces que compilan/arrancan | ~3/8 | 8/8 |
-| Superficies con auth | 2/4 | 4/4 |
+| Superficies con auth | 4/4 ✅ | 4/4 |
 | Cobertura de tests (núcleo) | 0% | > 60% |
 | Ciclo de vida del viaje completo | Parcial | Completo con estados intermedios |
 | Apps de cliente funcionales | 1/2 (conductor parcial) | 2/2 |
@@ -330,3 +330,5 @@ Monorepo npm workspaces (`apps/*`, `services/*`, `packages/**/*`). Stack: **Nest
 | 2026-07-09 | Creación del plan a partir del diagnóstico completo del monorepo. |
 | 2026-07-10 | Fase 0: completadas 0.1 (B1–B7), 0.5, 0.6, 0.7, 0.8. 0.2/0.3 bloqueadas por entorno (Node 26); 0.4 parcial. |
 | 2026-07-10 | Se detectó que `origin/main` es una historia no relacionada (web + Coolify, sin auth/ia). Decisión: base oficial = `respaldo-codigo-actual`; apps móviles (Expo). Migrada la infra de despliegue de `main` (Dockerfiles API/dashboard, realtime adaptado con `prisma generate`, `next.config` standalone, `docker-compose.yml` Coolify, `.dockerignore`). Se omitieron los Dockerfiles web de las apps Expo. |
+| 2026-07-10 | **Fase 1 completada** (1.1–1.8): auth en socket, authz por evento, CORS restringido (realtime + API), login en dashboard, `@Roles` en los 7 controladores (incl. `maps`/`pricing`), JWT endurecido, throttler global y `AuditInterceptor`. Criterio de aceptación cumplido. Superficies con auth: 4/4. |
+| 2026-07-10 | **Fase 2 en curso**: 2.2 (máquina de estados del ciclo de vida del viaje en el API: arrived/start/complete/cancel con validación de transiciones y liberación transaccional de recursos) y 2.3 (cancelación de solicitudes con cascada al viaje). API typechea limpio (`tsc --noEmit`). |
