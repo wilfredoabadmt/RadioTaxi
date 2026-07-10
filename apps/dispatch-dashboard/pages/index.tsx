@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import type { Socket } from 'socket.io-client';
 import SectionCard from '../components/SectionCard';
 import MapPlaceholder from '../components/MapPlaceholder';
@@ -14,16 +15,41 @@ const Home = () => {
   const [error, setError] = useState<string | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
+  
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [user, setUser] = useState<any>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('token');
+      const storedUser = localStorage.getItem('user');
+      if (!token) {
+        router.push('/login');
+      } else {
+        setIsAuthenticated(true);
+        if (storedUser) {
+          setUser(JSON.parse(storedUser));
+        }
+        setLoadingAuth(false);
+      }
+    }
+  }, [router]);
 
   const fetchData = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
     setLoading(true);
     setError(null);
 
     try {
+      const headers = { 'Authorization': `Bearer ${token}` };
       const [tripsRes, vehiclesRes, reportsRes] = await Promise.all([
-        fetch(`${apiBaseUrl}/trip-requests`),
-        fetch(`${apiBaseUrl}/vehicles`),
-        fetch(`${apiBaseUrl}/reports/corporate`)
+        fetch(`${apiBaseUrl}/trip-requests`, { headers }),
+        fetch(`${apiBaseUrl}/vehicles`, { headers }),
+        fetch(`${apiBaseUrl}/reports`, { headers })
       ]);
 
       if (!tripsRes.ok || !vehiclesRes.ok || !reportsRes.ok) {
@@ -52,17 +78,28 @@ const Home = () => {
     }
   };
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    router.push('/login');
+  };
 
   useEffect(() => {
+    if (!isAuthenticated) return;
+    fetchData();
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
     if (typeof window === 'undefined') return;
 
     let socketInstance: Socket | null = null;
+    const token = localStorage.getItem('token');
 
     import('socket.io-client').then(({ io }) => {
-      socketInstance = io(realtimeUrl);
+      socketInstance = io(realtimeUrl, {
+        auth: { token }
+      });
       setSocket(socketInstance);
 
       socketInstance.on('connect', () => {
@@ -87,7 +124,6 @@ const Home = () => {
 
       socketInstance.on('trip:assigned', (data) => {
         console.log('Viaje asignado:', data);
-        // Actualizar la lista de solicitudes de viaje
         setTripRequests(prev => prev.filter(req => req.id !== data.tripRequestId));
       });
     });
@@ -95,7 +131,15 @@ const Home = () => {
     return () => {
       socketInstance?.disconnect();
     };
-  }, []);
+  }, [isAuthenticated]);
+
+  if (loadingAuth) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <span className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <main style={{
@@ -105,29 +149,53 @@ const Home = () => {
       padding: '32px'
     }}>
       <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-        <div style={{ marginBottom: '24px' }}>
-          <h1 style={{ fontSize: '2rem', fontWeight: 'bold', marginBottom: '8px' }}>
-            RadioTaxi - Panel de Despacho
-          </h1>
+        <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h1 style={{ fontSize: '2rem', fontWeight: 'bold', marginBottom: '8px' }}>
+              RadioTaxi - Panel de Despacho
+            </h1>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+              <div style={{
+                padding: '8px 16px',
+                borderRadius: '8px',
+                background: loading ? '#fef3c7' : '#d1fae5',
+                color: loading ? '#92400e' : '#065f46',
+                fontSize: '0.875rem'
+              }}>
+                API: {loading ? 'Cargando...' : error ? 'Error' : 'Conectado'}
+              </div>
+              <div style={{
+                padding: '8px 16px',
+                borderRadius: '8px',
+                background: realtimeConnected ? '#d1fae5' : '#fee2e2',
+                color: realtimeConnected ? '#065f46' : '#991b1b',
+                fontSize: '0.875rem'
+              }}>
+                Tiempo Real: {realtimeConnected ? 'Conectado' : 'Desconectado'}
+              </div>
+            </div>
+          </div>
           <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-            <div style={{
-              padding: '8px 16px',
-              borderRadius: '8px',
-              background: loading ? '#fef3c7' : '#d1fae5',
-              color: loading ? '#92400e' : '#065f46',
-              fontSize: '0.875rem'
-            }}>
-              API: {loading ? 'Cargando...' : error ? 'Error' : 'Conectado'}
-            </div>
-            <div style={{
-              padding: '8px 16px',
-              borderRadius: '8px',
-              background: realtimeConnected ? '#d1fae5' : '#fee2e2',
-              color: realtimeConnected ? '#065f46' : '#991b1b',
-              fontSize: '0.875rem'
-            }}>
-              Tiempo Real: {realtimeConnected ? 'Conectado' : 'Desconectado'}
-            </div>
+            {user && (
+              <span style={{ color: '#475569', fontSize: '0.875rem' }}>
+                Usuario: <strong>{user.email}</strong> ({user.role})
+              </span>
+            )}
+            <button
+              onClick={handleLogout}
+              style={{
+                background: '#dc2626',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 8,
+                padding: '8px 16px',
+                cursor: 'pointer',
+                fontSize: '0.875rem',
+                fontWeight: 'bold'
+              }}
+            >
+              Cerrar Sesión
+            </button>
           </div>
         </div>
         <header style={{ marginBottom: 32 }}>

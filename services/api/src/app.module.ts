@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { AiModule } from './ai/ai.module';
 import { AuthModule } from './auth/auth.module';
@@ -15,10 +16,15 @@ import { MapsModule } from './maps/maps.module';
 import { TripFaresModule } from './trip-fares/trip-fares.module';
 import { CorporateReportsModule } from './corporate-reports/corporate-reports.module';
 import { DriversModule } from './drivers/drivers.module';
+import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ThrottlerModule.forRoot([{
+      ttl: 60000,
+      limit: 100
+    }]),
     PrismaModule,
     AiModule,
     AuthModule,
@@ -32,10 +38,12 @@ import { DriversModule } from './drivers/drivers.module';
     CorporateReportsModule,
     DriversModule
   ],
-  // Guards globales: JWT primero (autenticación), luego Roles (autorización)
+  // Guards y Filtros globales: Rate-limiting, JWT (auth), Roles (authz), Interceptor de Auditoría
   providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
-    { provide: APP_GUARD, useClass: RolesGuard }
+    { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor }
   ]
 })
 export class AppModule {}
