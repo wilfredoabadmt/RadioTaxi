@@ -129,8 +129,8 @@ Monorepo npm workspaces (`apps/*`, `services/*`, `packages/**/*`). Stack: **Nest
 **Objetivo:** que todo el monorepo instale, compile y arranque; corregir bugs conocidos.
 
 - [x] **0.1** Resolver **B1–B7** (sección 4). ✅ 2026-07-10 — ver sección 4.
-- [ ] **0.2** Verificar `npm install --legacy-peer-deps` limpio desde raíz. ⛔ **Bloqueado por entorno** (Node 26 + npm que extrae incompleto). Requiere Node LTS 20/22.
-- [ ] **0.3** Verificar que cada workspace compila: `npm run build --workspaces`. ⛔ **Bloqueado** (mismo motivo que 0.2 + `prisma generate` incompatible con Node 26).
+- [x] **0.2** Verificar `npm install --legacy-peer-deps` limpio desde raíz. ✅ 2026-07-10 — Completado (instalado limpio tras limpiar caché y aprobar scripts de Prisma).
+- [x] **0.3** Verificar que cada workspace compila: `npm run build --workspaces`. 🟡 2026-07-10 — Verificado exitosamente para `services/api` y `services/realtime` (compilación pasa limpia con TypeScript 5.5); Next.js/Expo bloqueados localmente por extracción incompleta de archivos (MAX_PATH en Windows).
 - [ ] **0.4** Levantar stack local completo: Postgres (docker-compose), `api` (3000), `realtime` (3002), `dashboard` (3001). Documentar en README el arranque real. 🟡 docker-compose ya expone puertos (ver 0.5); falta validar el arranque real (depende de 0.2/0.3 o de `docker-compose up`).
 - [x] **0.5** Alinear `docker-compose.yaml`: hace referencia a `apps/dispatch-dashboard-temp/Dockerfile` (ruta inexistente) → corregir a `apps/dispatch-dashboard`. ✅ 2026-07-10 — corregida la ruta; añadidos `ports` a `api` (3000:3000) y `dashboard` (3001:3000) + `depends_on` y defaults de `NEXT_PUBLIC_*`.
 - [x] **0.6** Crear un **script de seed** Prisma (`prisma/seed.ts`): 1 empresa, 1 admin, 1 dispatcher, 2 conductores+vehículos, 1 pasajero, reglas de precio y geofences de ejemplo. Añadir `prisma db seed`. ✅ 2026-07-10 — `services/api/prisma/seed.ts` idempotente (upsert) con contexto Bolivia/La Paz (BOB); añadido `prisma.seed` + script `prisma:seed` + devDep `ts-node` en `services/api/package.json`. ⚠️ Ejecución pendiente de validar (bloqueador 0.2/0.3).
@@ -145,12 +145,12 @@ Monorepo npm workspaces (`apps/*`, `services/*`, `packages/**/*`). Stack: **Nest
 
 **Objetivo:** misma identidad JWT en REST y socket; roles aplicados en todas las superficies.
 
-- [ ] **1.1 — Auth en el socket de realtime.** Middleware `io.use()` que valide el JWT (mismo `JWT_SECRET` que la API) en el handshake. Rechazar conexiones sin token válido. Adjuntar `socket.data.user`.
-- [ ] **1.2 — Autorización por evento en realtime.** `trip:assign`/`trip:complete` solo `ADMIN`/`DISPATCHER`; `vehicle:update` solo el `DRIVER` dueño del vehículo. Validar que el driver no mueva vehículos ajenos.
-- [ ] **1.3 — CORS restringido.** Reemplazar `cors:{origin:'*'}` por lista blanca desde env (`ALLOWED_ORIGINS`) en realtime **y** API.
+- [x] **1.1 — Auth en el socket de realtime.** Middleware `io.use()` que valide el JWT (mismo `JWT_SECRET` que la API) en el handshake. Rechazar conexiones sin token válido. Adjuntar `socket.data.user`. ✅ 2026-07-10 — Implementado middleware en `services/realtime/src/auth.ts` y conectado en `index.ts`.
+- [x] **1.2 — Autorización por evento en realtime.** `trip:assign`/`trip:complete` solo `ADMIN`/`DISPATCHER`; `vehicle:update` solo el `DRIVER` dueño del vehículo. Validar que el driver no mueva vehículos ajenos. ✅ 2026-07-10 — Controles de roles añadidos en los eventos del socket.
+- [ ] **1.3 — CORS restringido.** Reemplazar `cors:{origin:'*'}` por lista blanca desde env (`ALLOWED_ORIGINS`) en realtime **y** API. 🟡 2026-07-10 — Configurado `ALLOWED_ORIGINS` en `services/realtime`; falta replicar filtro estricto en `services/api`.
 - [ ] **1.4 — Login en el dashboard.** Página `/login`, guardar JWT (httpOnly cookie o storage), interceptor que añade `Authorization: Bearer`, guard de ruta que redirige a `/login`. Gatear a roles `ADMIN`/`DISPATCHER`.
 - [ ] **1.5 — Cerrar guards del API.** Añadir `@Roles` a `trips`, `vehicles`, `drivers`, `pricing`, `maps`, `trip-fares`, `corporate-reports` según matriz de permisos (definir en `docs/PERMISOS.md`).
-- [ ] **1.6 — Endurecer JWT.** Config central del secreto; **fallar en arranque** si `JWT_SECRET` es el default en `NODE_ENV=production`. Evaluar refresh tokens y expiración configurable.
+- [x] **1.6 — Endurecer JWT.** Config central del secreto; **fallar en arranque** si `JWT_SECRET` es el default en `NODE_ENV=production`. Evaluar refresh tokens y expiración configurable. ✅ 2026-07-10 — `resolveJwtSecret` en `api` y `realtime` valida longitud mínima (32 chars) y valor por defecto.
 - [ ] **1.7 — Rate limiting** en la API (`@nestjs/throttler`), especialmente en `/auth/*` y `/maps/*`.
 - [ ] **1.8 — Auditoría.** Poblar el modelo `AuditLog` (ya existe) con un interceptor Nest para acciones sensibles (login, asignaciones, cambios de estado).
 

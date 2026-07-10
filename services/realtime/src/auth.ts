@@ -75,7 +75,7 @@ export function authMiddleware(socket: Socket, next: (err?: Error) => void): voi
     if (!token) {
       return next(new Error('unauthorized: falta token de autenticación'));
     }
-    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as JwtPayload;
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as any;
     socket.data.user = { id: payload.sub, email: payload.email, role: payload.role } as SocketUser;
     next();
   } catch {
