@@ -42,6 +42,9 @@ services:
     environment:
       PORT: 3002
       DATABASE_URL: postgres://${DATABASE_USER:-radiotaxi}:${DATABASE_PASSWORD:-radiotaxi}@postgres:5432/${DATABASE_NAME:-radiotaxi}
+      # MISMO secreto que la API para validar los JWT del socket.
+      JWT_SECRET: ${JWT_SECRET:-dev-insecure-secret-change-me}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001}
 
   dashboard:
     build:

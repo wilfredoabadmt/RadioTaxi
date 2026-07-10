@@ -40,6 +40,9 @@ services:
       PORT: 3002
       # realtime usa PrismaClient en runtime -> necesita la BD.
       DATABASE_URL: postgres://${DATABASE_USER:-radiotaxi}:${DATABASE_PASSWORD:-radiotaxi}@postgres:5432/${DATABASE_NAME:-radiotaxi}
+      # MISMO secreto que la API para validar los JWT del socket.
+      JWT_SECRET: ${JWT_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
 
   dashboard:
     build:

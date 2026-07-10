@@ -4,6 +4,7 @@ import { Server, Socket } from 'socket.io';
 import { PrismaClient } from '@prisma/client';
 import { calculateFare, saveFare, FareBreakdown } from './pricing.utils';
 import { getDistanceMeters } from './geo.utils';
+import { authMiddleware, getUser, hasRole, driverOwnsVehicle } from './auth';
 
 // ---------------------------------------------------------------------------
 // Prisma (cliente standalone, sin NestJS)
@@ -328,17 +329,27 @@ async function broadcastPendingRequests(io: Server) {
 
 const PORT = Number(process.env.PORT) || 3002;
 
+// CORS restringido: lista blanca desde env (fallback a orígenes de dev).
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:3000,http://localhost:3001')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 const server = http.createServer();
 const io = new Server(server, {
-  cors: { origin: '*' },
+  cors: { origin: ALLOWED_ORIGINS, credentials: true },
 });
+
+// Autenticación en el handshake: rechaza conexiones sin JWT válido.
+io.use(authMiddleware);
 
 // Polling: refresca posiciones cada 5s para clientes recién conectados.
 // (El dashboard ya recibe pushes, esto garantiza sincronía sin driver-app.)
 const REFRESH_MS = 5000;
 
 io.on('connection', async (socket: Socket) => {
-  console.log(`[realtime] Cliente conectado: ${socket.id}`);
+  const user = getUser(socket);
+  console.log(`[realtime] Cliente conectado: ${socket.id} (user=${user?.id} role=${user?.role})`);
 
   // Estado inicial al conectar
   try {
@@ -349,9 +360,13 @@ io.on('connection', async (socket: Socket) => {
     socket.emit('db:error', { message: 'No se pudo leer la base de datos' });
   }
 
-  // Despachador asigna un viaje
+  // Despachador asigna un viaje (solo ADMIN/DISPATCHER)
   socket.on('trip:assign', async (data: { tripRequestId: number; vehicleId: number }) => {
     try {
+      if (!hasRole(socket, 'ADMIN', 'DISPATCHER')) {
+        socket.emit('trip:assign:error', { message: 'No autorizado' });
+        return;
+      }
       const { tripRequestId, vehicleId } = data;
       const result = await assignTrip(tripRequestId, vehicleId);
       console.log(`[realtime] Viaje asignado: request=${tripRequestId} -> trip=${result.trip.id}`);
@@ -380,6 +395,10 @@ io.on('connection', async (socket: Socket) => {
     durationSeconds?: number;
   }) => {
     try {
+      if (!hasRole(socket, 'ADMIN', 'DISPATCHER')) {
+        socket.emit('trip:complete:error', { message: 'No autorizado' });
+        return;
+      }
       const result = await completeTripByVehicle(
         data.vehicleId,
         data.fareTotal,
@@ -410,7 +429,7 @@ io.on('connection', async (socket: Socket) => {
     }
   });
 
-  // Driver-app reporta posición
+  // Driver-app reporta posición (solo el DRIVER dueño del vehículo)
   socket.on('vehicle:update', async (data: {
     id: number;
     currentLatitude: number;
@@ -418,6 +437,15 @@ io.on('connection', async (socket: Socket) => {
     status?: string;
   }) => {
     try {
+      if (!hasRole(socket, 'DRIVER')) {
+        socket.emit('vehicle:update:error', { message: 'No autorizado' });
+        return;
+      }
+      const owns = await driverOwnsVehicle(prisma, user!.id, data.id);
+      if (!owns) {
+        socket.emit('vehicle:update:error', { message: 'El vehículo no pertenece a este conductor' });
+        return;
+      }
       await updateVehiclePosition(
         data.id,
         data.currentLatitude,
