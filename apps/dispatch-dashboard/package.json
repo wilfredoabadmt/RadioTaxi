@@ -8,7 +8,6 @@
     "start": "next start"
   },
   "dependencies": {
-    "@next/swc-win32-x64-msvc": "^14.2.33",
     "leaflet": "^1.9.4",
     "next": "^14.0.0",
     "react": "18.2.0",
