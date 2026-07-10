@@ -11,8 +11,16 @@ RUN apt-get update -y && apt-get install -y openssl
 
 # Copiar metadatos del workspace
 COPY package.json package-lock.json* tsconfig.base.json ./
+COPY apps/dispatch-dashboard/package.json ./apps/dispatch-dashboard/
+COPY apps/client-app/package.json ./apps/client-app/
+COPY apps/driver-app/package.json ./apps/driver-app/
+COPY packages/shared/types/package.json ./packages/shared/types/
+COPY packages/shared/utils/package.json ./packages/shared/utils/
+COPY services/api/package.json ./services/api/
+COPY services/pricing-engine/package.json ./services/pricing-engine/
 COPY services/realtime/package.json ./services/realtime/
 COPY services/realtime/tsconfig.json ./services/realtime/
+COPY services/telephony/package.json ./services/telephony/
 
 # Instalar dependencias
 RUN npm install
