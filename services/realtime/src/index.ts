@@ -335,7 +335,12 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? 'http://localhost:3000,h
   .map((o) => o.trim())
   .filter(Boolean);
 
-const server = http.createServer();
+const server = http.createServer((req, res) => {
+  if (req.url === '/' || req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('OK');
+  }
+});
 const io = new Server(server, {
   cors: { origin: ALLOWED_ORIGINS, credentials: true },
 });
