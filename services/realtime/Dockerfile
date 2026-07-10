@@ -1,16 +1,49 @@
-FROM node:20-alpine
+# Dockerfile for RadioTaxi Realtime Service - Debian Slim
+# NOTA: realtime reutiliza el esquema Prisma de services/api, por eso el
+# builder copia ese schema y ejecuta `prisma generate` (el cliente generado
+# viaja al runner dentro de node_modules).
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
-# Dependencias
-COPY services/realtime/package.json ./
-COPY services/api/prisma ./prisma
-RUN npm install
-RUN npx prisma generate
+# OpenSSL requerido por Prisma
+RUN apt-get update -y && apt-get install -y openssl
 
-# Código
-COPY services/realtime/src ./src
-COPY services/realtime/tsconfig.json ./
+# Copiar metadatos del workspace
+COPY package.json package-lock.json* tsconfig.base.json ./
+COPY services/realtime/package.json ./services/realtime/
+COPY services/realtime/tsconfig.json ./services/realtime/
+
+# Instalar dependencias
+RUN npm install
+
+# Esquema Prisma (compartido con la API) + generar cliente
+COPY services/api/prisma ./services/api/prisma
+RUN npx prisma generate --schema=services/api/prisma/schema.prisma
+
+# Código fuente
+COPY services/realtime ./services/realtime
+
+# Build
+WORKDIR /app/services/realtime
+RUN npm run build
+
+# ---- Runner ----
+FROM node:20-slim
+WORKDIR /app
+
+RUN apt-get update -y && apt-get install -y openssl wget && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/services/realtime/dist ./dist
+COPY --from=builder /app/services/realtime/package.json ./
 
 EXPOSE 3002
-CMD ["npm", "run", "dev"]
+ENV PORT 3002
+ENV NODE_ENV production
+
+# Healthcheck del servidor Socket.io
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --quiet --tries=1 --spider http://localhost:3002 || exit 1
+
+CMD ["node", "dist/index.js"]

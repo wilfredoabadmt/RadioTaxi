@@ -1,0 +1,31 @@
+# Reduce el contexto de build de Docker (respaldo tiene skills/ y binarios grandes)
+node_modules
+**/node_modules
+dist
+**/dist
+.next
+**/.next
+out
+**/out
+*.tsbuildinfo
+
+.git
+.gitignore
+
+# Ruido del repo que no debe entrar al build
+skills/
+openrouter/
+*.zip
+*.exe
+handle*
+temp_contents.txt
+desktop.ini
+
+# Entornos locales
+.env
+.env.*
+!.env.example
+
+# Docs y meta (no necesarios para el build)
+docs/
+.claude/

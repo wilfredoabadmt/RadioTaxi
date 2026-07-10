@@ -1,8 +1,9 @@
 # Plan de Desarrollo — RadioTaxi SaaS Platform
 
 > Documento vivo de planificación y seguimiento del desarrollo.
-> **Última actualización:** 2026-07-09
-> **Rama de trabajo:** `respaldo-codigo-actual` → objetivo integrar a `main`
+> **Última actualización:** 2026-07-10
+> **Rama base oficial:** `respaldo-codigo-actual` (decidido 2026-07-10). El `main` remoto es una **línea paralela no relacionada** (historias sin ancestro común): apps **web Next.js** simuladas + despliegue Coolify, **sin `auth` ni `ai`**. Se conserva `respaldo` como base (backend seguro real + IA + plan) y se **migra de `main` solo**: (1) infraestructura de despliegue [hecho 2026-07-10], (2) el diseño premium como referencia visual.
+> **Plataforma de apps:** móvil (Expo/React Native) para pasajero y conductor — confirma las Fases 3/4 tal cual. La UI web de `main` es solo referencia, no código reutilizable.
 > **Cómo usarlo:** cada tarea tiene una casilla `[ ]`. Al completarla, márcala `[x]` y añade la fecha/commit. Mantén este archivo actualizado en cada PR.
 
 ---
@@ -328,3 +329,4 @@ Monorepo npm workspaces (`apps/*`, `services/*`, `packages/**/*`). Stack: **Nest
 |---|---|
 | 2026-07-09 | Creación del plan a partir del diagnóstico completo del monorepo. |
 | 2026-07-10 | Fase 0: completadas 0.1 (B1–B7), 0.5, 0.6, 0.7, 0.8. 0.2/0.3 bloqueadas por entorno (Node 26); 0.4 parcial. |
+| 2026-07-10 | Se detectó que `origin/main` es una historia no relacionada (web + Coolify, sin auth/ia). Decisión: base oficial = `respaldo-codigo-actual`; apps móviles (Expo). Migrada la infra de despliegue de `main` (Dockerfiles API/dashboard, realtime adaptado con `prisma generate`, `next.config` standalone, `docker-compose.yml` Coolify, `.dockerignore`). Se omitieron los Dockerfiles web de las apps Expo. |
