@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package.json package-lock.json* tsconfig.base.json ./
 COPY apps/dispatch-dashboard/package.json ./apps/dispatch-dashboard/
 
-RUN npm install --no-audit --no-fund
+RUN npm install --no-audit --no-fund --force
 
 COPY apps/dispatch-dashboard ./apps/dispatch-dashboard
 WORKDIR /app/apps/dispatch-dashboard
