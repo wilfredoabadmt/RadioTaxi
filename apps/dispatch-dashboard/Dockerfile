@@ -3,6 +3,9 @@ FROM node:20-slim AS builder
 
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 
+# Install OpenSSL and CA Certificates for Prisma engines and HTTPS downloads
+RUN apt-get update -y && apt-get install -y openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY package.json package-lock.json* tsconfig.base.json ./
 COPY apps/dispatch-dashboard/package.json ./apps/dispatch-dashboard/
