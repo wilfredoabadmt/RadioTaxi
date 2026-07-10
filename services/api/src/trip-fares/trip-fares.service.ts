@@ -1,13 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateTripFareDto } from './dto/create-trip-fare.dto';
 
 @Injectable()
 export class TripFaresService {
   constructor(private prisma: PrismaService) {}
 
-  async create(data: any) {
-    // Usamos 'as any' para que TypeScript no bloquee la compilación
-    // mientras reconoce los nuevos campos del schema
+  async create(data: CreateTripFareDto) {
     const tripFare = await this.prisma.tripFare.create({
       data: {
         tripId: data.tripId,
@@ -16,7 +15,7 @@ export class TripFaresService {
         distanceMeters: data.distanceMeters,
         durationSeconds: data.durationSeconds,
         totalFare: data.totalFare,
-      } as any,
+      },
     });
 
     // Actualizamos el total en la tabla de viajes
@@ -24,7 +23,7 @@ export class TripFaresService {
       where: { id: data.tripId },
       data: {
         fareTotal: data.totalFare,
-      } as any,
+      },
     });
 
     return tripFare;

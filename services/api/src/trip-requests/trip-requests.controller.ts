@@ -1,47 +1,38 @@
-import { Controller, Post, Body, Get, Param } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { Controller, Post, Body, Get, Param, Request } from '@nestjs/common';
+import { TripRequestsService } from './trip-requests.service';
+import { CreateTripRequestDto } from './dto/create-trip-request.dto';
+import { Roles } from '../auth/roles.decorator';
 
 @Controller('trip-requests')
 export class TripRequestsController {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly tripRequestsService: TripRequestsService) {}
 
   // 🚀 Crear solicitud de viaje (cliente)
+  @Roles('USER')
   @Post()
-  create(@Body() body: any) {
-    return this.prisma.tripRequest.create({
-      data: {
-        customerId: body.customerId,
-        companyId: body.companyId,
-        originAddress: body.originAddress,
-        originLat: body.originLat,
-        originLng: body.originLng,
-        destinationAddress: body.destinationAddress,
-        destinationLat: body.destinationLat,
-        destinationLng: body.destinationLng,
-      }
-    });
+  create(@Body() createTripRequestDto: CreateTripRequestDto, @Request() req: any) {
+    return this.tripRequestsService.create(createTripRequestDto, req.user.id);
   }
 
-  // 📄 Ver todas las solicitudes
+  // 📄 Ver todas las solicitudes (solo ADMIN/DISPATCHER)
+  @Roles('ADMIN', 'DISPATCHER')
   @Get()
-  findAll() {
-    return this.prisma.tripRequest.findMany({
-      include: {
-        customer: true,
-        company: true
-      }
-    });
+  findAll(@Request() req: any) {
+    return this.tripRequestsService.findAll(req.user.role, req.user.id);
   }
 
-  // 🔍 Ver una solicitud
+  // 🧑‍💻 Ver MIS solicitudes (solo USER)
+  // IMPORTANTE: debe declararse ANTES de @Get(':id') para que la ruta estática
+  // 'mine' no sea capturada por el parámetro dinámico ':id'.
+  @Roles('USER')
+  @Get('mine')
+  findMine(@Request() req: any) {
+    return this.tripRequestsService.findMine(req.user.id);
+  }
+
+  // 🔍 Ver una solicitud (según rol)
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.prisma.tripRequest.findUnique({
-      where: { id: Number(id) },
-      include: {
-        customer: true,
-        company: true
-      }
-    });
+  findOne(@Param('id') id: string, @Request() req: any) {
+    return this.tripRequestsService.findOne(Number(id), req.user.role, req.user.id);
   }
 }

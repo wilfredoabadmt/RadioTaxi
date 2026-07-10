@@ -7,6 +7,7 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { RolesGuard } from './roles.guard';
 import { PrismaModule } from '../prisma/prisma.module';
+import { resolveJwtSecret } from './jwt-secret.util';
 
 @Module({
   imports: [
@@ -16,7 +17,7 @@ import { PrismaModule } from '../prisma/prisma.module';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_SECRET') || 'dev-insecure-secret',
+        secret: resolveJwtSecret(config),
         signOptions: { expiresIn: '8h' }
       })
     })

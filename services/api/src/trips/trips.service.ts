@@ -1,5 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreateTripDto } from './dto/create-trip.dto';
 
 @Injectable()
 export class TripsService {
@@ -46,13 +52,13 @@ export class TripsService {
     });
   }
 
-  async create(data: any) {
+  async create(data: CreateTripDto) {
     const tripRequest = await this.prisma.tripRequest.findUnique({
       where: { id: data.tripRequestId }
     });
 
     if (!tripRequest) {
-      throw new Error('TripRequest not found');
+      throw new NotFoundException(`TripRequest con ID ${data.tripRequestId} no encontrada`);
     }
 
     const existingTrip = await this.prisma.trip.findUnique({
@@ -60,7 +66,7 @@ export class TripsService {
     });
 
     if (existingTrip) {
-      throw new Error('Trip already exists for this request');
+      throw new ConflictException('Ya existe un viaje para esta solicitud');
     }
 
     const driver = await this.prisma.driver.findFirst({
@@ -73,7 +79,7 @@ export class TripsService {
     });
 
     if (!driver || driver.vehicle.length === 0) {
-      throw new Error('Driver or Vehicle not available');
+      throw new BadRequestException('Conductor o vehículo no disponible');
     }
 
     const vehicle = driver.vehicle[0];

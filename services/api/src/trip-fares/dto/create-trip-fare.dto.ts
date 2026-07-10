@@ -1,4 +1,4 @@
-import { IsInt, IsNotEmpty, IsNumber, IsOptional, Min } from 'class-validator';
+import { IsInt, IsNumber, Min } from 'class-validator';
 
 export class CreateTripFareDto {
   @IsInt()
@@ -9,16 +9,17 @@ export class CreateTripFareDto {
 
   @IsNumber()
   @Min(0)
+  baseFare!: number;
+
+  @IsInt()
+  @Min(0)
   distanceMeters!: number;
 
-  @IsNumber()
+  @IsInt()
   @Min(0)
   durationSeconds!: number;
 
   @IsNumber()
-  fareAmount!: number;
-
-  @IsOptional()
-  @IsNotEmpty()
-  notes?: string;
+  @Min(0)
+  totalFare!: number;
 }
