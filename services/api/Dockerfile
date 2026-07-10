@@ -1,8 +1,17 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json* tsconfig.base.json ./
+COPY apps/dispatch-dashboard/package.json ./apps/dispatch-dashboard/
+COPY apps/client-app/package.json ./apps/client-app/
+COPY apps/driver-app/package.json ./apps/driver-app/
+COPY packages/shared/types/package.json ./packages/shared/types/
+COPY packages/shared/utils/package.json ./packages/shared/utils/
 COPY services/api/package.json ./services/api/
-RUN npm install
+COPY services/pricing-engine/package.json ./services/pricing-engine/
+COPY services/realtime/package.json ./services/realtime/
+COPY services/telephony/package.json ./services/telephony/
+
+RUN npm install --no-audit --no-fund
 COPY services/api ./services/api
 WORKDIR /app/services/api
 RUN npx prisma generate
