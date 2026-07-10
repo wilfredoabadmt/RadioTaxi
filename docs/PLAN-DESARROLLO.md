@@ -127,14 +127,14 @@ Monorepo npm workspaces (`apps/*`, `services/*`, `packages/**/*`). Stack: **Nest
 
 **Objetivo:** que todo el monorepo instale, compile y arranque; corregir bugs conocidos.
 
-- [ ] **0.1** Resolver **B1–B7** (sección 4).
-- [ ] **0.2** Verificar `npm install --legacy-peer-deps` limpio desde raíz.
-- [ ] **0.3** Verificar que cada workspace compila: `npm run build --workspaces`.
-- [ ] **0.4** Levantar stack local completo: Postgres (docker-compose), `api` (3000), `realtime` (3002), `dashboard` (3001). Documentar en README el arranque real.
-- [ ] **0.5** Alinear `docker-compose.yaml`: hace referencia a `apps/dispatch-dashboard-temp/Dockerfile` (ruta inexistente) → corregir a `apps/dispatch-dashboard`.
-- [ ] **0.6** Crear un **script de seed** Prisma (`prisma/seed.ts`): 1 empresa, 1 admin, 1 dispatcher, 2 conductores+vehículos, 1 pasajero, reglas de precio y geofences de ejemplo. Añadir `prisma db seed`.
-- [ ] **0.7** `.gitignore`: sacar del repo binarios `handle*.exe`, `handle.zip`, `skills.zip`, `temp_contents.txt` (ruido).
-- [ ] **0.8** Añadir `.env.example` faltantes a `realtime`, `dashboard`, `client-app`, `driver-app` con todas las variables.
+- [x] **0.1** Resolver **B1–B7** (sección 4). ✅ 2026-07-10 — ver sección 4.
+- [ ] **0.2** Verificar `npm install --legacy-peer-deps` limpio desde raíz. ⛔ **Bloqueado por entorno** (Node 26 + npm que extrae incompleto). Requiere Node LTS 20/22.
+- [ ] **0.3** Verificar que cada workspace compila: `npm run build --workspaces`. ⛔ **Bloqueado** (mismo motivo que 0.2 + `prisma generate` incompatible con Node 26).
+- [ ] **0.4** Levantar stack local completo: Postgres (docker-compose), `api` (3000), `realtime` (3002), `dashboard` (3001). Documentar en README el arranque real. 🟡 docker-compose ya expone puertos (ver 0.5); falta validar el arranque real (depende de 0.2/0.3 o de `docker-compose up`).
+- [x] **0.5** Alinear `docker-compose.yaml`: hace referencia a `apps/dispatch-dashboard-temp/Dockerfile` (ruta inexistente) → corregir a `apps/dispatch-dashboard`. ✅ 2026-07-10 — corregida la ruta; añadidos `ports` a `api` (3000:3000) y `dashboard` (3001:3000) + `depends_on` y defaults de `NEXT_PUBLIC_*`.
+- [x] **0.6** Crear un **script de seed** Prisma (`prisma/seed.ts`): 1 empresa, 1 admin, 1 dispatcher, 2 conductores+vehículos, 1 pasajero, reglas de precio y geofences de ejemplo. Añadir `prisma db seed`. ✅ 2026-07-10 — `services/api/prisma/seed.ts` idempotente (upsert) con contexto Bolivia/La Paz (BOB); añadido `prisma.seed` + script `prisma:seed` + devDep `ts-node` en `services/api/package.json`. ⚠️ Ejecución pendiente de validar (bloqueador 0.2/0.3).
+- [x] **0.7** `.gitignore`: sacar del repo binarios `handle*.exe`, `handle.zip`, `skills.zip`, `temp_contents.txt` (ruido). ✅ 2026-07-10 — reglas añadidas (`*.exe`, `*.zip`, `temp_contents.txt`, `desktop.ini`) y `git rm --cached` de los 7 archivos.
+- [x] **0.8** Añadir `.env.example` faltantes a `realtime`, `dashboard`, `client-app`, `driver-app` con todas las variables. ✅ 2026-07-10 — creado `apps/client-app/.env.example` (el único que faltaba; los otros 3 ya existían).
 
 **Criterio de aceptación:** `docker-compose up` + seed → dashboard muestra datos reales y el mapa pinta vehículos.
 
@@ -327,3 +327,4 @@ Monorepo npm workspaces (`apps/*`, `services/*`, `packages/**/*`). Stack: **Nest
 | Fecha | Cambio |
 |---|---|
 | 2026-07-09 | Creación del plan a partir del diagnóstico completo del monorepo. |
+| 2026-07-10 | Fase 0: completadas 0.1 (B1–B7), 0.5, 0.6, 0.7, 0.8. 0.2/0.3 bloqueadas por entorno (Node 26); 0.4 parcial. |

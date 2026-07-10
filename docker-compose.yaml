@@ -18,6 +18,8 @@ services:
     build:
       context: .
       dockerfile: services/api/Dockerfile
+    ports:
+      - "3000:3000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,10 +46,15 @@ services:
   dashboard:
     build:
       context: .
-      dockerfile: apps/dispatch-dashboard-temp/Dockerfile
+      dockerfile: apps/dispatch-dashboard/Dockerfile
+    ports:
+      - "3001:3000"
+    depends_on:
+      - api
+      - realtime
     environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-      NEXT_PUBLIC_REALTIME_URL: ${NEXT_PUBLIC_REALTIME_URL}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3000/api}
+      NEXT_PUBLIC_REALTIME_URL: ${NEXT_PUBLIC_REALTIME_URL:-http://localhost:3002}
     labels:
       - "coolify.managed=true"
 
