@@ -17,6 +17,13 @@ export class AuthController {
     return this.authService.login(dto);
   }
 
+  // GET /api/auth/health -> público para Docker healthcheck
+  @Public()
+  @Get('health')
+  health() {
+    return { status: 'ok' };
+  }
+
   // POST /api/auth/register -> público (crea usuarios USER por defecto)
   @Public()
   @Post('register')
