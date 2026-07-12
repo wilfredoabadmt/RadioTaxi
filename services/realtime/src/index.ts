@@ -79,6 +79,29 @@ function mapTripRequest(t: any): TripRequestDTO {
 }
 
 // ---------------------------------------------------------------------------
+// Máquina de estados del viaje (espejo de services/api/src/trips/trips.service.ts).
+// ASSIGNED → ARRIVED → IN_PROGRESS → COMPLETED. CANCELLED desde cualquier no-terminal.
+// TODO(DT): consolidar esta lógica con la del API (fuente única) — plan 2.1/6.x.
+// ---------------------------------------------------------------------------
+
+type TripStatus = 'ASSIGNED' | 'ARRIVED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+
+const TRIP_TRANSITIONS: Record<TripStatus, TripStatus[]> = {
+  ASSIGNED: ['ARRIVED', 'IN_PROGRESS', 'CANCELLED'],
+  ARRIVED: ['IN_PROGRESS', 'CANCELLED'],
+  IN_PROGRESS: ['COMPLETED', 'CANCELLED'],
+  COMPLETED: [],
+  CANCELLED: [],
+};
+
+function assertTransition(from: string, to: TripStatus) {
+  const allowed = TRIP_TRANSITIONS[from as TripStatus] ?? [];
+  if (!allowed.includes(to)) {
+    throw new Error(`Transición inválida: no se puede pasar de "${from}" a "${to}"`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Servicios de datos: todos consultan/escriben la BD real.
 // Si la BD no está configurada, el servicio arranca pero reporta el estado.
 // ---------------------------------------------------------------------------
