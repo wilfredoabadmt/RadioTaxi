@@ -38,9 +38,11 @@ ENV HOSTNAME="0.0.0.0"
 
 RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
 
-# Next.js standalone solo copia lo estrictamente necesario para correr
+# Next.js standalone: copiar archivos estáticos tanto en raíz como en subdirectorio para garantizar que nunca den 404
 COPY --from=builder /app/apps/dispatch-dashboard/.next/standalone ./
+COPY --from=builder /app/apps/dispatch-dashboard/.next/static ./.next/static
 COPY --from=builder /app/apps/dispatch-dashboard/.next/static ./apps/dispatch-dashboard/.next/static
+COPY --from=builder /app/apps/dispatch-dashboard/public ./public
 COPY --from=builder /app/apps/dispatch-dashboard/public ./apps/dispatch-dashboard/public
 
 EXPOSE 3001
