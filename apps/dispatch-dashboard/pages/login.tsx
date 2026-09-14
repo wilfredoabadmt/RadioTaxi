@@ -23,8 +23,9 @@ export default function Login() {
     setLoading(true);
     setError('');
     
-    // Usar variable de entorno si existe, o valor por defecto
-    const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
+    // Usar variable de entorno si existe, asegurando el prefijo /api
+    const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
+    const apiBaseUrl = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/+$/, '')}/api`;
     
     try {
       const res = await fetch(`${apiBaseUrl}/auth/login`, {

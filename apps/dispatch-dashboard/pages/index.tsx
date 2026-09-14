@@ -4,7 +4,8 @@ import type { Socket } from 'socket.io-client';
 import SectionCard from '../components/SectionCard';
 import MapPlaceholder from '../components/MapPlaceholder';
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
+const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
+const apiBaseUrl = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/+$/, '')}/api`;
 const realtimeUrl = process.env.NEXT_PUBLIC_REALTIME_URL || 'http://localhost:3002';
 
 const Home = () => {

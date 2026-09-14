@@ -365,7 +365,24 @@ const server = http.createServer((req, res) => {
   }
 });
 const io = new Server(server, {
-  cors: { origin: ALLOWED_ORIGINS, credentials: true },
+  cors: {
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (ALLOWED_ORIGINS.includes('*') || ALLOWED_ORIGINS.includes('all')) return callback(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+      if (
+        origin.startsWith('http://localhost:') ||
+        origin.startsWith('https://localhost:') ||
+        origin.startsWith('http://127.0.0.1:') ||
+        origin.startsWith('https://127.0.0.1:') ||
+        origin.includes('.sslip.io')
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
+    credentials: true,
+  },
 });
 
 // Autenticación en el handshake: rechaza conexiones sin JWT válido.

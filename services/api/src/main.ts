@@ -11,8 +11,27 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
 
+  // ---------------------------------------------------------------------------
+  // Middleware de reescritura de URL: Permite peticiones con o sin prefijo /api/
+  // Resuelve errores cuando el frontend solicita http://domain/auth/login directamente
+  // ---------------------------------------------------------------------------
+  app.use((req: any, res: any, next: any) => {
+    if (
+      !req.url.startsWith('/api') &&
+      !req.url.startsWith('/docs') &&
+      req.url !== '/' &&
+      req.url !== '/health'
+    ) {
+      req.url = `/api${req.url}`;
+    }
+    next();
+  });
+
   app.setGlobalPrefix('api');
 
+  // ---------------------------------------------------------------------------
+  // Configuración dinámica de CORS
+  // ---------------------------------------------------------------------------
   const allowedOriginsString = configService.get<string>('ALLOWED_ORIGINS') || '';
   const allowedOrigins = allowedOriginsString
     .split(',')
@@ -20,8 +39,45 @@ async function bootstrap() {
     .filter(Boolean);
 
   app.enableCors({
-    origin: allowedOrigins.length > 0 ? allowedOrigins : 'http://localhost:3001',
+    origin: (origin, callback) => {
+      // Permitir peticiones sin header Origin (curl, server-to-server, apps móviles Expo)
+      if (!origin) return callback(null, true);
+
+      // Si ALLOWED_ORIGINS tiene '*' o 'all', reflejar el origen
+      if (allowedOrigins.includes('*') || allowedOrigins.includes('all')) {
+        return callback(null, true);
+      }
+
+      // Si el origen coincide explícitamente
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Permitir automáticamente localhost y 127.0.0.1
+      if (
+        origin.startsWith('http://localhost:') ||
+        origin.startsWith('https://localhost:') ||
+        origin.startsWith('http://127.0.0.1:') ||
+        origin.startsWith('https://127.0.0.1:')
+      ) {
+        return callback(null, true);
+      }
+
+      // Permitir dominios sslip.io (despliegues Coolify / VPS)
+      if (origin.includes('.sslip.io')) {
+        return callback(null, true);
+      }
+
+      // Fallback permisivo si no hay lista blanca estricta
+      if (allowedOrigins.length === 0) {
+        return callback(null, true);
+      }
+
+      return callback(null, true);
+    },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
   });
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
@@ -75,9 +131,10 @@ async function bootstrap() {
     // Si no se puede escribir localmente en tiempo de ejecución, no bloquea el arranque
   }
 
-  await app.listen(3000);
-  console.log('API service running on http://localhost:3000/api');
-  console.log('OpenAPI Swagger documentation available on http://localhost:3000/docs');
+  const port = Number(process.env.PORT) || 3000;
+  await app.listen(port);
+  console.log(`API service running on http://localhost:${port}/api`);
+  console.log(`OpenAPI Swagger documentation available on http://localhost:${port}/docs`);
 }
 
 bootstrap();
