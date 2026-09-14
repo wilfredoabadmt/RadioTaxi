@@ -5,12 +5,12 @@ import SectionCard from '../components/SectionCard';
 import MapPlaceholder from '../components/MapPlaceholder';
 
 const getApiBaseUrl = () => {
-  const raw = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
-  let url = raw.endsWith('/api') ? raw : `${raw.replace(/\/+$/, '')}/api`;
-  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url.startsWith('http://')) {
-    url = url.replace(/^http:\/\//i, 'https://');
+  // En producción en el navegador, usar el proxy interno de Next.js (/api-proxy)
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
+    return '/api-proxy';
   }
-  return url;
+  const raw = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
+  return raw.endsWith('/api') ? raw : `${raw.replace(/\/+$/, '')}/api`;
 };
 
 const getRealtimeUrl = () => {

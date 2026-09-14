@@ -35,6 +35,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3001
 ENV HOSTNAME="0.0.0.0"
+ENV NODE_TLS_REJECT_UNAUTHORIZED=0
 
 RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
 

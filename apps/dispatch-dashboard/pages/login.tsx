@@ -23,13 +23,12 @@ export default function Login() {
     setLoading(true);
     setError('');
     
-    // Usar variable de entorno si existe, asegurando el prefijo /api
-    const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
-    let apiBaseUrl = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/+$/, '')}/api`;
-
-    // Si la página se carga sobre HTTPS, forzar HTTPS en la API para prevenir bloqueos por Mixed Content
-    if (typeof window !== 'undefined' && window.location.protocol === 'https:' && apiBaseUrl.startsWith('http://')) {
-      apiBaseUrl = apiBaseUrl.replace(/^http:\/\//i, 'https://');
+    // En producción en el navegador, usar el proxy interno de Next.js (/api-proxy)
+    // para evitar bloqueos por certificados autofirmados, Mixed Content o CORS
+    let apiBaseUrl = '/api-proxy';
+    if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+      const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
+      apiBaseUrl = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/+$/, '')}/api`;
     }
     
     try {
