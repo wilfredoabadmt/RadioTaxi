@@ -7,9 +7,14 @@ RUN apt-get update -y && apt-get install -y openssl ca-certificates && rm -rf /v
 
 WORKDIR /app/apps/dispatch-dashboard
 
+# Configurar reintentos y timeouts robustos para npm (evita ETIMEDOUT en VPS)
+RUN npm config set fetch-retries 5 \
+ && npm config set fetch-retry-mintimeout 20000 \
+ && npm config set fetch-retry-maxtimeout 120000
+
 # 1) Instalar SOLO dependencias del dashboard para máxima eficiencia de caché Docker
-COPY apps/dispatch-dashboard/package.json ./
-RUN npm install --no-audit --no-fund
+COPY apps/dispatch-dashboard/package.json apps/dispatch-dashboard/package-lock.json* ./
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
 # 2) tsconfig base (referenciado como ../../tsconfig.base.json)
 COPY tsconfig.base.json /app/tsconfig.base.json
