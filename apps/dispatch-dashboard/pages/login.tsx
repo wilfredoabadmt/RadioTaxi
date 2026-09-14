@@ -37,7 +37,12 @@ export default function Login() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
-      const data = await res.json();
+      let data: any = {};
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error(`El servidor respondió con código ${res.status}. Verifique la conexión.`);
+      }
       if (!res.ok) {
         throw new Error(data.message || 'Credenciales inválidas');
       }

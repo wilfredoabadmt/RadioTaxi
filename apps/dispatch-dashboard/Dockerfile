@@ -25,6 +25,12 @@ COPY apps/dispatch-dashboard/ ./
 # 4) Asegurar directorio public para evitar fallos de copia
 RUN mkdir -p public
 
+# Variables de entorno públicas para build y runtime
+ARG NEXT_PUBLIC_API_URL=http://radiotaxi-api.89.116.29.168.sslip.io
+ARG NEXT_PUBLIC_REALTIME_URL=http://radiotaxi-realtime.89.116.29.168.sslip.io
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_REALTIME_URL=$NEXT_PUBLIC_REALTIME_URL
+
 # 5) Build de Next.js (genera .next/standalone)
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
@@ -36,6 +42,11 @@ ENV NODE_ENV=production
 ENV PORT=3001
 ENV HOSTNAME="0.0.0.0"
 ENV NODE_TLS_REJECT_UNAUTHORIZED=0
+
+ARG NEXT_PUBLIC_API_URL=http://radiotaxi-api.89.116.29.168.sslip.io
+ARG NEXT_PUBLIC_REALTIME_URL=http://radiotaxi-realtime.89.116.29.168.sslip.io
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_REALTIME_URL=$NEXT_PUBLIC_REALTIME_URL
 
 RUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*
 

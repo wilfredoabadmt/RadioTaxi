@@ -8,12 +8,10 @@ const nextConfig = {
     externalDir: true,
   },
   async rewrites() {
-    const rawApi = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
-    const cleanApi = rawApi.endsWith('/api') ? rawApi : `${rawApi.replace(/\/+$/, '')}/api`;
     return [
       {
         source: '/api-proxy/:path*',
-        destination: `${cleanApi}/:path*`,
+        destination: '/api/proxy/:path*',
       },
     ];
   },
