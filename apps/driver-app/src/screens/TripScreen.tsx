@@ -11,7 +11,7 @@ import {
 import * as Location from 'expo-location';
 import { useAuth } from '../auth-context';
 import { getSocket } from '../socket';
-import { fetchTrip } from '../api';
+import { fetchTrip, markTripArrived, startTrip, fetchAssignedVehicle } from '../api';
 import { TripDetail, TripAssignment, TripCompletedEvent } from '../types';
 
 const GPS_INTERVAL_MS = 5000;
@@ -21,12 +21,24 @@ export default function TripScreen() {
   const socket = getSocket();
 
   const [connected, setConnected] = useState(false);
+  const [assignedVehicle, setAssignedVehicle] = useState<any | null>(null);
   const [activeTrip, setActiveTrip] = useState<TripDetail | null>(null);
   const [loadingTrip, setLoadingTrip] = useState(false);
-  const [completing, setCompleting] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
   const [lastFare, setLastFare] = useState<TripCompletedEvent | null>(null);
 
   const gpsTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // -------------------------------------------------------------------------
+  // Cargar vehículo asignado al iniciar
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (token) {
+      fetchAssignedVehicle(token).then((v) => {
+        if (v) setAssignedVehicle(v);
+      });
+    }
+  }, [token]);
 
   // -------------------------------------------------------------------------
   // Conexión Socket.io
@@ -57,7 +69,7 @@ export default function TripScreen() {
   }, [socket]);
 
   // -------------------------------------------------------------------------
-  // Recepción de asignaciones de viaje
+  // Recepción de asignaciones y cambios de estado del viaje
   // -------------------------------------------------------------------------
   useEffect(() => {
     async function onTripAssigned(data: TripAssignment) {
@@ -67,7 +79,7 @@ export default function TripScreen() {
         const trip = await fetchTrip(data.tripId, token!);
         setActiveTrip(trip);
         setLastFare(null);
-        Alert.alert('Nuevo viaje', 'Tienes un viaje asignado');
+        Alert.alert('Nuevo viaje', 'Tienes un viaje asignado por despacho');
       } catch (err) {
         Alert.alert('Error', 'No se pudo cargar el viaje asignado');
       } finally {
@@ -79,19 +91,28 @@ export default function TripScreen() {
       console.log('[driver-app] Viaje completado:', data);
       setLastFare(data);
       setActiveTrip(null);
+      Alert.alert('Viaje finalizado', `Tarifa final: Bs ${Number(data.fareTotal).toFixed(2)}`);
+    }
+
+    function onTripStatusChanged(updated: any) {
+      if (activeTrip && updated.id === activeTrip.id) {
+        setActiveTrip((prev) => (prev ? { ...prev, status: updated.status } : null));
+      }
     }
 
     socket.on('trip:assigned', onTripAssigned);
     socket.on('trip:completed', onTripCompleted);
+    socket.on('trip:status_changed', onTripStatusChanged);
 
     return () => {
       socket.off('trip:assigned', onTripAssigned);
       socket.off('trip:completed', onTripCompleted);
+      socket.off('trip:status_changed', onTripStatusChanged);
     };
-  }, [socket, token]);
+  }, [socket, token, activeTrip]);
 
   // -------------------------------------------------------------------------
-  // Envío periódico de posición GPS
+  // Envío periódico de posición GPS (CORREGIDO: emite siempre, aun libre)
   // -------------------------------------------------------------------------
   useEffect(() => {
     async function startGps() {
@@ -101,7 +122,6 @@ export default function TripScreen() {
         return;
       }
 
-      // Envío inmediato + intervalo
       sendPosition();
       gpsTimer.current = setInterval(sendPosition, GPS_INTERVAL_MS);
     }
@@ -113,8 +133,8 @@ export default function TripScreen() {
         });
         const { latitude, longitude } = loc.coords;
 
-        // El vehículo se obtiene del viaje activo o se mantiene el último
-        const vehicleId = activeTrip?.vehicle?.id;
+        // Si hay viaje activo, usamos su vehículo; sino, el asignado al conductor
+        const vehicleId = activeTrip?.vehicle?.id ?? assignedVehicle?.id;
         if (!vehicleId) return;
 
         socket.emit('vehicle:update', {
@@ -136,42 +156,69 @@ export default function TripScreen() {
         gpsTimer.current = null;
       }
     };
-  }, [socket, activeTrip]);
+  }, [socket, activeTrip, assignedVehicle]);
 
   // -------------------------------------------------------------------------
-  // Acciones del conductor
+  // Acciones de la máquina de estados del viaje
   // -------------------------------------------------------------------------
+  async function handleArrived() {
+    if (!activeTrip || !token) return;
+    try {
+      setTransitioning(true);
+      await markTripArrived(activeTrip.id, token);
+      socket.emit('trip:arrived', { tripId: activeTrip.id });
+      setActiveTrip((prev) => (prev ? { ...prev, status: 'ARRIVED' } : null));
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'No se pudo marcar llegada');
+    } finally {
+      setTransitioning(false);
+    }
+  }
+
+  async function handleStart() {
+    if (!activeTrip || !token) return;
+    try {
+      setTransitioning(true);
+      await startTrip(activeTrip.id, token);
+      socket.emit('trip:start', { tripId: activeTrip.id });
+      setActiveTrip((prev) => (prev ? { ...prev, status: 'IN_PROGRESS' } : null));
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'No se pudo iniciar el viaje');
+    } finally {
+      setTransitioning(false);
+    }
+  }
+
   function handleComplete() {
     if (!activeTrip) return;
 
     Alert.alert(
       'Completar viaje',
-      '¿Confirmas que el viaje ha finalizado? Se calculará la tarifa automáticamente.',
+      '¿Confirmas que el viaje ha finalizado? Se liquidará la tarifa automáticamente.',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Completar',
           onPress: async () => {
-            setCompleting(true);
+            setTransitioning(true);
             socket.emit('trip:complete', { vehicleId: activeTrip.vehicle.id });
-            // El estado se actualiza vía el evento 'trip:completed'
-            setTimeout(() => setCompleting(false), 3000);
+            setTimeout(() => setTransitioning(false), 3000);
           },
         },
       ]
     );
   }
 
-  // -------------------------------------------------------------------------
-  // Render
-  // -------------------------------------------------------------------------
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Conductor</Text>
+          <Text style={styles.headerTitle}>Conductor RadioTaxi</Text>
           <Text style={styles.headerSubtitle}>{user?.email}</Text>
+          {assignedVehicle && (
+            <Text style={styles.vehiclePlate}>🚗 Placa: {assignedVehicle.plate}</Text>
+          )}
         </View>
         <View style={styles.row}>
           <View style={[styles.badge, connected ? styles.badgeOn : styles.badgeOff]}>
@@ -210,11 +257,27 @@ export default function TripScreen() {
           </View>
         ) : null}
 
-        {/* Viaje activo */}
+        {/* Viaje activo con estados intermedios */}
         {activeTrip ? (
           <View style={styles.tripCard}>
-            <Text style={styles.tripBadge}>Viaje #{activeTrip.id}</Text>
-            <Text style={styles.tripStatus}>{activeTrip.status}</Text>
+            <View style={styles.tripHeaderRow}>
+              <Text style={styles.tripBadge}>Viaje #{activeTrip.id}</Text>
+              <View style={[
+                styles.statusTag,
+                activeTrip.status === 'ASSIGNED' && { backgroundColor: '#fef3c7' },
+                activeTrip.status === 'ARRIVED' && { backgroundColor: '#e0e7ff' },
+                activeTrip.status === 'IN_PROGRESS' && { backgroundColor: '#dcfce7' },
+              ]}>
+                <Text style={[
+                  styles.statusTagText,
+                  activeTrip.status === 'ASSIGNED' && { color: '#b45309' },
+                  activeTrip.status === 'ARRIVED' && { color: '#4338ca' },
+                  activeTrip.status === 'IN_PROGRESS' && { color: '#15803d' },
+                ]}>
+                  {activeTrip.status}
+                </Text>
+              </View>
+            </View>
 
             <View style={styles.tripPoint}>
               <Text style={styles.pointDot}>📍</Text>
@@ -236,7 +299,7 @@ export default function TripScreen() {
               <View style={styles.tripPoint}>
                 <Text style={styles.pointDot}>👤</Text>
                 <View>
-                  <Text style={styles.pointLabel}>Cliente</Text>
+                  <Text style={styles.pointLabel}>Pasajero</Text>
                   <Text style={styles.pointText}>
                     {activeTrip.tripRequest.customer.name || 'Sin nombre'}
                     {activeTrip.tripRequest.customer.phone ? ` · ${activeTrip.tripRequest.customer.phone}` : ''}
@@ -245,25 +308,44 @@ export default function TripScreen() {
               </View>
             ) : null}
 
-            <TouchableOpacity
-              style={[styles.completeBtn, completing && styles.btnDisabled]}
-              onPress={handleComplete}
-              disabled={completing}
-            >
-              {completing ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.completeBtnText}>Completar viaje</Text>
-              )}
-            </TouchableOpacity>
+            {/* Botones de acción según la máquina de estados */}
+            {activeTrip.status === 'ASSIGNED' && (
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.arrivedBtn, transitioning && styles.btnDisabled]}
+                onPress={handleArrived}
+                disabled={transitioning}
+              >
+                {transitioning ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionBtnText}>🚗 Llegué al punto de recogida</Text>}
+              </TouchableOpacity>
+            )}
+
+            {activeTrip.status === 'ARRIVED' && (
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.startBtn, transitioning && styles.btnDisabled]}
+                onPress={handleStart}
+                disabled={transitioning}
+              >
+                {transitioning ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionBtnText}>▶️ Iniciar viaje (Pasajero a bordo)</Text>}
+              </TouchableOpacity>
+            )}
+
+            {activeTrip.status === 'IN_PROGRESS' && (
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.completeBtn, transitioning && styles.btnDisabled]}
+                onPress={handleComplete}
+                disabled={transitioning}
+              >
+                {transitioning ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionBtnText}>🏁 Finalizar y liquidar viaje</Text>}
+              </TouchableOpacity>
+            )}
           </View>
         ) : (
           !loadingTrip && !lastFare ? (
             <View style={styles.center}>
               <Text style={styles.emptyIcon}>🚕</Text>
-              <Text style={styles.emptyTitle}>Esperando viajes</Text>
+              <Text style={styles.emptyTitle}>Esperando servicios</Text>
               <Text style={styles.muted}>
-                Estás conectado. Cuando el despachador te asigne un viaje, aparecerá aquí.
+                Tu GPS se está emitiendo en tiempo real. Apareces visible para el despachador en el mapa.
               </Text>
             </View>
           ) : null
@@ -286,6 +368,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   headerSubtitle: { color: '#cbd5e1', fontSize: 13 },
+  vehiclePlate: { color: '#fde047', fontSize: 12, fontWeight: '600', marginTop: 2 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   badge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
   badgeOn: { backgroundColor: '#22c55e' },
@@ -303,32 +386,47 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     marginBottom: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  tripHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   tripBadge: {
     color: '#1e3a8a',
     fontWeight: 'bold',
-    fontSize: 14,
+    fontSize: 16,
   },
-  tripStatus: {
-    color: '#f59e0b',
+  statusTag: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  statusTagText: {
     fontSize: 12,
+    fontWeight: '700',
     textTransform: 'uppercase',
-    marginBottom: 16,
-    marginTop: 2,
   },
   tripPoint: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
   pointDot: { fontSize: 24 },
   pointLabel: { color: '#64748b', fontSize: 12, textTransform: 'uppercase' },
   pointText: { color: '#0f172a', fontSize: 16, fontWeight: '500' },
-  completeBtn: {
-    backgroundColor: '#059669',
+  actionBtn: {
     borderRadius: 10,
     padding: 16,
     alignItems: 'center',
     marginTop: 12,
   },
+  arrivedBtn: { backgroundColor: '#4338ca' },
+  startBtn: { backgroundColor: '#0284c7' },
+  completeBtn: { backgroundColor: '#059669' },
   btnDisabled: { opacity: 0.6 },
-  completeBtnText: { color: '#fff', fontSize: 17, fontWeight: '600' },
+  actionBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   fareCard: {
     backgroundColor: '#d1fae5',
     borderRadius: 16,

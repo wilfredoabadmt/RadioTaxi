@@ -21,6 +21,11 @@ const Home = () => {
   const [user, setUser] = useState<any>(null);
   const router = useRouter();
 
+  // Estados de despacho asistido por IA y selección de vehículos
+  const [selectedVehicles, setSelectedVehicles] = useState<Record<number, number>>({});
+  const [aiSuggestions, setAiSuggestions] = useState<Record<number, any>>({});
+  const [loadingAi, setLoadingAi] = useState<Record<number, boolean>>({});
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const token = localStorage.getItem('token');
@@ -53,7 +58,7 @@ const Home = () => {
       ]);
 
       if (!tripsRes.ok || !vehiclesRes.ok || !reportsRes.ok) {
-        throw new Error('Error fetching data from backend');
+        throw new Error('Error al obtener datos del servidor');
       }
 
       setTripRequests(await tripsRes.json());
@@ -67,7 +72,7 @@ const Home = () => {
   };
 
   const assignTrip = (tripRequestId: number, vehicleId: number) => {
-    if (socket) {
+    if (socket && vehicleId) {
       socket.emit('trip:assign', { tripRequestId, vehicleId });
     }
   };
@@ -75,6 +80,40 @@ const Home = () => {
   const completeTrip = (vehicleId: number) => {
     if (socket) {
       socket.emit('trip:complete', { vehicleId });
+    }
+  };
+
+  // Solicitar sugerencia de despacho asistido por IA a Google Gemini
+  const requestAiSuggestion = async (request: any) => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    setLoadingAi(prev => ({ ...prev, [request.id]: true }));
+    try {
+      const availableVehicles = vehicles.filter(v => v.status === 'available');
+      const res = await fetch(`${apiBaseUrl}/ai/dispatch/suggest`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          tripRequest: request,
+          vehicles: availableVehicles
+        })
+      });
+
+      if (res.ok) {
+        const suggestion = await res.json();
+        setAiSuggestions(prev => ({ ...prev, [request.id]: suggestion }));
+        if (suggestion.recommendedVehicleId) {
+          setSelectedVehicles(prev => ({ ...prev, [request.id]: suggestion.recommendedVehicleId }));
+        }
+      }
+    } catch (err) {
+      console.error('Error al invocar despacho IA:', err);
+    } finally {
+      setLoadingAi(prev => ({ ...prev, [request.id]: false }));
     }
   };
 
@@ -113,17 +152,14 @@ const Home = () => {
       });
 
       socketInstance.on('vehicles:update', (updatedVehicles) => {
-        console.log('Vehículos actualizados:', updatedVehicles);
         setVehicles(updatedVehicles);
       });
 
       socketInstance.on('trip-requests:update', (updatedRequests) => {
-        console.log('Solicitudes actualizadas:', updatedRequests);
         setTripRequests(updatedRequests);
       });
 
       socketInstance.on('trip:assigned', (data) => {
-        console.log('Viaje asignado:', data);
         setTripRequests(prev => prev.filter(req => req.id !== data.tripRequestId));
       });
     });
@@ -141,242 +177,201 @@ const Home = () => {
     );
   }
 
+  const availableVehicles = vehicles.filter(v => v.status === 'available');
+
   return (
-    <main style={{
-      minHeight: '100vh',
-      background: '#f8fafc',
-      color: '#0f172a',
-      padding: '32px'
-    }}>
-      <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-        <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <main className="min-h-screen bg-slate-50 text-slate-900 p-6 md:p-10 font-sans">
+      <div className="max-w-7xl mx-auto space-y-8">
+        {/* Top Navbar */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 style={{ fontSize: '2rem', fontWeight: 'bold', marginBottom: '8px' }}>
-              RadioTaxi - Panel de Despacho
-            </h1>
-            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-              <div style={{
-                padding: '8px 16px',
-                borderRadius: '8px',
-                background: loading ? '#fef3c7' : '#d1fae5',
-                color: loading ? '#92400e' : '#065f46',
-                fontSize: '0.875rem'
-              }}>
-                API: {loading ? 'Cargando...' : error ? 'Error' : 'Conectado'}
-              </div>
-              <div style={{
-                padding: '8px 16px',
-                borderRadius: '8px',
-                background: realtimeConnected ? '#d1fae5' : '#fee2e2',
-                color: realtimeConnected ? '#065f46' : '#991b1b',
-                fontSize: '0.875rem'
-              }}>
-                Tiempo Real: {realtimeConnected ? 'Conectado' : 'Desconectado'}
-              </div>
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">🚕</span>
+              <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+                RadioTaxi <span className="text-indigo-600">SaaS Dispatch</span>
+              </h1>
+            </div>
+            <div className="flex items-center gap-3 mt-2 text-xs font-semibold">
+              <span className={`px-2.5 py-1 rounded-full flex items-center gap-1.5 ${realtimeConnected ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                <span className={`w-2 h-2 rounded-full ${realtimeConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                {realtimeConnected ? 'Telemetría en Vivo Conectada' : 'Realtime Desconectado'}
+              </span>
+              <span className="bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-full">
+                API: {loading ? 'Sincronizando...' : 'Online'}
+              </span>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+
+          <div className="flex items-center gap-4">
             {user && (
-              <span style={{ color: '#475569', fontSize: '0.875rem' }}>
-                Usuario: <strong>{user.email}</strong> ({user.role})
-              </span>
+              <div className="text-right hidden sm:block">
+                <p className="text-sm font-bold text-slate-800">{user.email}</p>
+                <p className="text-xs text-indigo-600 font-semibold uppercase">{user.role}</p>
+              </div>
             )}
             <button
+              onClick={fetchData}
+              className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-medium transition"
+            >
+              🔄 Actualizar
+            </button>
+            <button
               onClick={handleLogout}
-              style={{
-                background: '#dc2626',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 8,
-                padding: '8px 16px',
-                cursor: 'pointer',
-                fontSize: '0.875rem',
-                fontWeight: 'bold'
-              }}
+              className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition"
             >
               Cerrar Sesión
             </button>
           </div>
         </div>
-        <header style={{ marginBottom: 32 }}>
-          <p style={{ margin: 0, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1.5 }}>RadioTaxi Dashboard</p>
-          <h1 style={{ margin: '8px 0 0', fontSize: 42 }}>Operadora en tiempo real</h1>
-          <p style={{ margin: '12px 0 0', color: '#475569', fontSize: 18 }}>
-            Monitorea solicitudes, vehículos disponibles y reportes corporativos desde un solo panel.
-          </p>
-        </header>
 
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 320px', minWidth: 280 }}>
-            <div style={{ background: '#fff', padding: 24, borderRadius: 18, boxShadow: '0 14px 32px rgba(15,23,42,0.06)' }}>
-              <p style={{ margin: 0, color: '#64748b' }}>Estado del sistema</p>
-              <h2 style={{ margin: '12px 0 0', fontSize: 28 }}>Resumen rápido</h2>
-              <div style={{ marginTop: 20, display: 'grid', gap: 12 }}>
-                <div style={{ background: '#f1f5f9', borderRadius: 14, padding: 16 }}>
-                  <strong>{tripRequests.length}</strong>
-                  <p style={{ margin: '8px 0 0', color: '#475569' }}>Solicitudes de viaje</p>
-                </div>
-                <div style={{ background: '#f1f5f9', borderRadius: 14, padding: 16 }}>
-                  <strong>{vehicles.length}</strong>
-                  <p style={{ margin: '8px 0 0', color: '#475569' }}>Vehículos registrados</p>
-                </div>
-                <div style={{ background: '#f1f5f9', borderRadius: 14, padding: 16 }}>
-                  <strong>{reports.length}</strong>
-                  <p style={{ margin: '8px 0 0', color: '#475569' }}>Reportes corporativos</p>
-                </div>
-              </div>
-            </div>
+        {/* Métricas rápidas */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Solicitudes Pendientes</p>
+            <p className="text-4xl font-black text-indigo-600 mt-2">{tripRequests.length}</p>
+            <p className="text-xs text-slate-500 mt-1">En cola de despacho</p>
           </div>
-
-          <div style={{ flex: '2 1 640px', minWidth: 320 }}>
-            <div style={{ background: '#fff', padding: 24, borderRadius: 18, boxShadow: '0 14px 32px rgba(15,23,42,0.06)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <p style={{ margin: 0, color: '#64748b' }}>Panel operativo</p>
-                  <h2 style={{ margin: '8px 0 0', fontSize: 28 }}>Acciones rápidas</h2>
-                </div>
-                <button
-                  onClick={fetchData}
-                  style={{
-                    background: '#312e81',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 10,
-                    padding: '12px 18px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  Actualizar datos
-                </button>
-              </div>
-              <p style={{ marginTop: 16, color: '#475569' }}>
-                {loading ? 'Cargando datos...' : 'Utiliza este panel para verificar el estado del despacho y los reportes de la flota.'}
-              </p>
-              {error ? (
-                <div style={{ marginTop: 16, padding: 16, background: '#fee2e2', color: '#991b1b', borderRadius: 12 }}>
-                  {error}
-                </div>
-              ) : null}
-            </div>
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Vehículos en Flota</p>
+            <p className="text-4xl font-black text-emerald-600 mt-2">
+              {availableVehicles.length} <span className="text-sm font-semibold text-slate-400">/ {vehicles.length} disp.</span>
+            </p>
+            <p className="text-xs text-slate-500 mt-1">Monitoreados por telemetría GPS</p>
+          </div>
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Despacho Asistido</p>
+            <p className="text-2xl font-black text-amber-500 mt-2 flex items-center gap-1">
+              <span>✨ Gemini AI</span>
+            </p>
+            <p className="text-xs text-slate-500 mt-1">Optimización por distancia y tiempo</p>
           </div>
         </div>
 
-        <SectionCard title="Mapa de despacho" description="Vista preliminar de la ubicación en tiempo real.">
+        {/* Mapa en vivo */}
+        <SectionCard title="Mapa Operativo de Telemetría GPS" description="Ubicación en tiempo real de vehículos y puntos de recogida en La Paz.">
           <MapPlaceholder tripRequests={tripRequests} vehicles={vehicles} />
         </SectionCard>
 
-        <SectionCard title="Solicitudes de viaje" description="Lista de viajes pendientes y programados."> 
+        {/* Cola de solicitudes con despacho asistido por IA */}
+        <SectionCard title="Cola de Solicitudes de Viaje" description="Asigna vehículos manual o inteligentemente con sugerencias de IA.">
           {tripRequests.length === 0 ? (
-            <p>No hay solicitudes disponibles.</p>
+            <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+              <span className="text-4xl">🚕</span>
+              <p className="text-base font-semibold text-slate-700 mt-2">No hay solicitudes pendientes en este momento</p>
+              <p className="text-xs text-slate-400">Las solicitudes emitidas por la app de clientes aparecerán aquí automáticamente.</p>
+            </div>
           ) : (
-            <div style={{ display: 'grid', gap: 12 }}>
-              {tripRequests.slice(0, 4).map((request) => (
-                <div key={request.id} style={{ padding: 16, borderRadius: 14, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                  <p style={{ margin: 0, fontWeight: 600 }}>{request.originAddress} → {request.destinationAddress}</p>
-                  <p style={{ margin: '8px 0 0', color: '#475569' }}>Estado: {request.status}</p>
-                  <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <select
-                      style={{
-                        padding: '8px 12px',
-                        borderRadius: 8,
-                        border: '1px solid #cbd5e1',
-                        background: '#fff'
-                      }}
-                      id={`vehicle-select-${request.id}`}
-                    >
-                      <option value="">Seleccionar vehículo</option>
-                      {vehicles.filter(v => v.status === 'available').map(vehicle => (
-                        <option key={vehicle.id} value={vehicle.id}>
-                          {vehicle.plate} - {vehicle.status}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => {
-                        const select = document.getElementById(`vehicle-select-${request.id}`) as HTMLSelectElement;
-                        const vehicleId = parseInt(select.value);
-                        if (vehicleId) {
-                          assignTrip(request.id, vehicleId);
-                        }
-                      }}
-                      style={{
-                        background: '#2563eb',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: 8,
-                        padding: '8px 16px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Asignar viaje
-                    </button>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {tripRequests.map((request) => {
+                const suggestion = aiSuggestions[request.id];
+                const isAiLoading = loadingAi[request.id];
+                const selectedVehicleId = selectedVehicles[request.id] || '';
+
+                return (
+                  <div key={request.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 hover:border-indigo-300 transition">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="text-xs font-bold bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg">
+                          Solicitud #{request.id}
+                        </span>
+                        <p className="text-xs text-slate-400 mt-1">
+                          {new Date(request.requestedAt).toLocaleTimeString()}
+                        </p>
+                      </div>
+                      <span className="text-xs font-bold uppercase bg-amber-100 text-amber-800 px-2 py-0.5 rounded">
+                        {request.status}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 text-sm">
+                      <p className="flex items-center gap-2 text-slate-800 font-medium">
+                        <span>📍</span> <span className="truncate">{request.originAddress || 'Origen por coordenadas'}</span>
+                      </p>
+                      <p className="flex items-center gap-2 text-slate-600 text-xs">
+                        <span>🏁</span> <span className="truncate">{request.destinationAddress || 'Destino no especificado'}</span>
+                      </p>
+                    </div>
+
+                    {/* Caja de sugerencia IA si está disponible */}
+                    {suggestion && (
+                      <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-xs space-y-1">
+                        <div className="flex items-center justify-between font-bold text-indigo-950">
+                          <span className="flex items-center gap-1">✨ Recomendación IA ({suggestion.source}):</span>
+                          <span>Vehículo #{suggestion.recommendedVehicleId}</span>
+                        </div>
+                        <p className="text-indigo-800">{suggestion.reason}</p>
+                      </div>
+                    )}
+
+                    {/* Controles de asignación */}
+                    <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row gap-2">
+                      <select
+                        value={selectedVehicleId}
+                        onChange={(e) => setSelectedVehicles(prev => ({ ...prev, [request.id]: parseInt(e.target.value) }))}
+                        className="flex-1 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="">Seleccionar vehículo ({availableVehicles.length} disponibles)</option>
+                        {availableVehicles.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            🚗 {v.plate} ({v.brand || 'Vehículo'} {v.model || ''})
+                          </option>
+                        ))}
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={() => requestAiSuggestion(request)}
+                        disabled={isAiLoading || availableVehicles.length === 0}
+                        className="bg-purple-100 hover:bg-purple-200 text-purple-900 px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 disabled:opacity-50"
+                      >
+                        {isAiLoading ? 'Analizando...' : '✨ Sugerir con IA'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const vId = selectedVehicles[request.id];
+                          if (vId) assignTrip(request.id, vId);
+                        }}
+                        disabled={!selectedVehicles[request.id]}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition disabled:opacity-40"
+                      >
+                        Asignar
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </SectionCard>
 
-        <SectionCard title="Vehículos activos" description="Monitorea el inventario y el estado de la flota."> 
-          {vehicles.length === 0 ? (
-            <p>No hay vehículos registrados.</p>
-          ) : (
-            <div style={{ display: 'grid', gap: 12 }}>
-              {vehicles.slice(0, 4).map((vehicle) => (
-                <div key={vehicle.id} style={{ padding: 16, borderRadius: 14, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                  <p style={{ margin: 0, fontWeight: 600 }}>{vehicle.plate || 'Sin placa'}</p>
-                  <p style={{ margin: '8px 0 0', color: '#475569' }}>Estado: {vehicle.status}</p>
-                  {vehicle.status === 'busy' && (
-                    <button
-                      onClick={() => completeTrip(vehicle.id)}
-                      style={{
-                        marginTop: 8,
-                        background: '#059669',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: 8,
-                        padding: '8px 16px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Completar viaje
-                    </button>
-                  )}
+        {/* Flota de vehículos */}
+        <SectionCard title="Estado Operativo de la Flota" description="Vehículos disponibles y en ruta con telemetría.">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {vehicles.map((vehicle) => (
+              <div key={vehicle.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div>
+                  <p className="font-bold text-slate-800 text-sm">{vehicle.plate}</p>
+                  <p className="text-xs text-slate-500">{vehicle.brand} {vehicle.model} ({vehicle.vehicleType || 'sedan'})</p>
+                  <span className={`inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                    vehicle.status === 'available' ? 'bg-emerald-100 text-emerald-800' :
+                    vehicle.status === 'busy' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    {vehicle.status}
+                  </span>
                 </div>
-              ))}
-            </div>
-          )}
-        </SectionCard>
-
-        <SectionCard title="Reportes corporativos" description="Genera y descarga reportes B2B en Excel o CSV."> 
-          {reports.length === 0 ? (
-            <p>No hay reportes generados.</p>
-          ) : (
-            <div style={{ display: 'grid', gap: 12 }}>
-              {reports.slice(0, 4).map((report) => (
-                <div key={report.id} style={{ padding: 16, borderRadius: 14, background: '#f8fafc', border: '1px solid #e2e8f0', display: 'grid', gap: 8 }}>
-                  <div>
-                    <p style={{ margin: 0, fontWeight: 600 }}>{report.reportType}</p>
-                    <p style={{ margin: '8px 0 0', color: '#475569' }}>Generado: {new Date(report.generatedAt).toLocaleString()}</p>
-                  </div>
-                  <a
-                    href={`${apiBaseUrl}/reports/corporate/download/${report.id}`}
-                    style={{
-                      display: 'inline-block',
-                      marginTop: 8,
-                      background: '#2563eb',
-                      color: '#fff',
-                      padding: '10px 14px',
-                      borderRadius: 10,
-                      textDecoration: 'none'
-                    }}
+                {vehicle.status === 'busy' && (
+                  <button
+                    onClick={() => completeTrip(vehicle.id)}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"
                   >
-                    Descargar reporte
-                  </a>
-                </div>
-              ))}
-            </div>
-          )}
+                    Completar
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
         </SectionCard>
       </div>
     </main>

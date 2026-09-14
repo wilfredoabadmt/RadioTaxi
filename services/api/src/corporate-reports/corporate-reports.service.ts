@@ -33,7 +33,7 @@ export class CorporateReportsService {
     const totalTrips = trips.length;
 
     const totalRevenue = trips.reduce(
-      (sum, t) => sum + (t.fareTotal || 0),
+      (sum: number, t: any) => sum + (Number(t.fareTotal) || 0),
       0
     );
 

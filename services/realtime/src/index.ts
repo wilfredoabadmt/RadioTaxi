@@ -379,6 +379,25 @@ io.on('connection', async (socket: Socket) => {
   const user = getUser(socket);
   console.log(`[realtime] Cliente conectado: ${socket.id} (user=${user?.id} role=${user?.role})`);
 
+  // Unirse a salas automáticas según perfil
+  if (user?.companyId) {
+    socket.join(`company:${user.companyId}`);
+  }
+  if (user?.role === 'DRIVER') {
+    socket.join(`driver:${user.id}`);
+  }
+
+  // Gestión explícita de salas (e.g. unirse a seguimiento de un viaje)
+  socket.on('room:join', (room: string) => {
+    socket.join(room);
+    console.log(`[realtime] ${socket.id} se unió a ${room}`);
+  });
+
+  socket.on('room:leave', (room: string) => {
+    socket.leave(room);
+    console.log(`[realtime] ${socket.id} dejó ${room}`);
+  });
+
   // Estado inicial al conectar
   try {
     socket.emit('vehicles:update', await fetchVehicles());
@@ -387,6 +406,41 @@ io.on('connection', async (socket: Socket) => {
     console.error('[realtime] Error enviando estado inicial:', err);
     socket.emit('db:error', { message: 'No se pudo leer la base de datos' });
   }
+
+  // Transición: Conductor llegó al punto de recogida (ASSIGNED -> ARRIVED)
+  socket.on('trip:arrived', async (data: { tripId: number }) => {
+    try {
+      const trip = await prisma.trip.findUnique({ where: { id: data.tripId } });
+      if (!trip) throw new Error(`Viaje ${data.tripId} no encontrado`);
+      assertTransition(trip.status, 'ARRIVED');
+      const updated = await prisma.trip.update({
+        where: { id: data.tripId },
+        data: { status: 'ARRIVED' }
+      });
+      io.to(`trip:${data.tripId}`).emit('trip:status_changed', updated);
+      io.emit('trip:status_changed', updated);
+    } catch (err: any) {
+      socket.emit('trip:arrived:error', { message: err.message });
+    }
+  });
+
+  // Transición: Iniciar viaje (ARRIVED/ASSIGNED -> IN_PROGRESS)
+  socket.on('trip:start', async (data: { tripId: number }) => {
+    try {
+      const trip = await prisma.trip.findUnique({ where: { id: data.tripId } });
+      if (!trip) throw new Error(`Viaje ${data.tripId} no encontrado`);
+      assertTransition(trip.status, 'IN_PROGRESS');
+      const updated = await prisma.trip.update({
+        where: { id: data.tripId },
+        data: { status: 'IN_PROGRESS' }
+      });
+      io.to(`trip:${data.tripId}`).emit('trip:status_changed', updated);
+      io.emit('trip:status_changed', updated);
+      await broadcastVehicles(io);
+    } catch (err: any) {
+      socket.emit('trip:start:error', { message: err.message });
+    }
+  });
 
   // Despachador asigna un viaje (solo ADMIN/DISPATCHER)
   socket.on('trip:assign', async (data: { tripRequestId: number; vehicleId: number }) => {

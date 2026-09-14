@@ -48,7 +48,7 @@ export class DriversService {
 
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: any) => {
       const user = await tx.user.create({
         data: {
           email: data.email,
@@ -88,7 +88,7 @@ export class DriversService {
     if (data.experienceYears !== undefined) driverData.experienceYears = data.experienceYears;
     if (data.status !== undefined) driverData.status = data.status;
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: any) => {
       if (Object.keys(userData).length > 0) {
         await tx.user.update({ where: { id: driver.userId }, data: userData });
       }
@@ -111,7 +111,7 @@ export class DriversService {
     }
 
     // Elimina el perfil Driver y desactiva la cuenta de usuario (soft delete del User).
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx: any) => {
       await tx.vehicle.updateMany({
         where: { driverId: id },
         data: { driverId: null }

@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "RadioTaxi Pasajero",
+    "slug": "radiotaxi-client",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#2563eb"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.radiotaxi.client",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Necesitamos tu ubicación para fijar tu punto de recogida del taxi."
+      }
+    },
+    "android": {
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
+      "package": "com.radiotaxi.client"
+    }
+  }
+}

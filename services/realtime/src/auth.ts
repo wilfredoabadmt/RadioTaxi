@@ -15,12 +15,14 @@ export interface SocketUser {
   id: number;
   email: string;
   role: string;
+  companyId?: number | null;
 }
 
 interface JwtPayload {
   sub: number;
   email: string;
   role: string;
+  companyId?: number | null;
 }
 
 /**
@@ -76,7 +78,12 @@ export function authMiddleware(socket: Socket, next: (err?: Error) => void): voi
       return next(new Error('unauthorized: falta token de autenticación'));
     }
     const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as any;
-    socket.data.user = { id: payload.sub, email: payload.email, role: payload.role } as SocketUser;
+    socket.data.user = {
+      id: payload.sub,
+      email: payload.email,
+      role: payload.role,
+      companyId: payload.companyId ?? null,
+    } as SocketUser;
     next();
   } catch {
     next(new Error('unauthorized: token inválido o expirado'));
