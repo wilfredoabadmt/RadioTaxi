@@ -4,9 +4,23 @@ import type { Socket } from 'socket.io-client';
 import SectionCard from '../components/SectionCard';
 import MapPlaceholder from '../components/MapPlaceholder';
 
-const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
-const apiBaseUrl = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/+$/, '')}/api`;
-const realtimeUrl = process.env.NEXT_PUBLIC_REALTIME_URL || 'http://localhost:3002';
+const getApiBaseUrl = () => {
+  const raw = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
+  let url = raw.endsWith('/api') ? raw : `${raw.replace(/\/+$/, '')}/api`;
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url.startsWith('http://')) {
+    url = url.replace(/^http:\/\//i, 'https://');
+  }
+  return url;
+};
+
+const getRealtimeUrl = () => {
+  const raw = process.env.NEXT_PUBLIC_REALTIME_URL || 'http://localhost:3002';
+  let url = raw.replace(/\/+$/, '');
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url.startsWith('http://')) {
+    url = url.replace(/^http:\/\//i, 'https://');
+  }
+  return url;
+};
 
 const Home = () => {
   const [tripRequests, setTripRequests] = useState<any[]>([]);
@@ -51,11 +65,12 @@ const Home = () => {
     setError(null);
 
     try {
+      const baseUrl = getApiBaseUrl();
       const headers = { 'Authorization': `Bearer ${token}` };
       const [tripsRes, vehiclesRes, reportsRes] = await Promise.all([
-        fetch(`${apiBaseUrl}/trip-requests`, { headers }),
-        fetch(`${apiBaseUrl}/vehicles`, { headers }),
-        fetch(`${apiBaseUrl}/reports`, { headers })
+        fetch(`${baseUrl}/trip-requests`, { headers }),
+        fetch(`${baseUrl}/vehicles`, { headers }),
+        fetch(`${baseUrl}/reports`, { headers })
       ]);
 
       if (!tripsRes.ok || !vehiclesRes.ok || !reportsRes.ok) {
@@ -91,8 +106,9 @@ const Home = () => {
 
     setLoadingAi(prev => ({ ...prev, [request.id]: true }));
     try {
+      const baseUrl = getApiBaseUrl();
       const availableVehicles = vehicles.filter(v => v.status === 'available');
-      const res = await fetch(`${apiBaseUrl}/ai/dispatch/suggest`, {
+      const res = await fetch(`${baseUrl}/ai/dispatch/suggest`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -137,7 +153,7 @@ const Home = () => {
     const token = localStorage.getItem('token');
 
     import('socket.io-client').then(({ io }) => {
-      socketInstance = io(realtimeUrl, {
+      socketInstance = io(getRealtimeUrl(), {
         auth: { token }
       });
       setSocket(socketInstance);

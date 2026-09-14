@@ -25,7 +25,12 @@ export default function Login() {
     
     // Usar variable de entorno si existe, asegurando el prefijo /api
     const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
-    const apiBaseUrl = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/+$/, '')}/api`;
+    let apiBaseUrl = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/+$/, '')}/api`;
+
+    // Si la página se carga sobre HTTPS, forzar HTTPS en la API para prevenir bloqueos por Mixed Content
+    if (typeof window !== 'undefined' && window.location.protocol === 'https:' && apiBaseUrl.startsWith('http://')) {
+      apiBaseUrl = apiBaseUrl.replace(/^http:\/\//i, 'https://');
+    }
     
     try {
       const res = await fetch(`${apiBaseUrl}/auth/login`, {
