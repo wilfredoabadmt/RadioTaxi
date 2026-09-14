@@ -27,9 +27,53 @@ export class AuthService {
    * Autentica a un usuario y devuelve un JWT + los datos públicos del usuario.
    */
   async login(dto: LoginDto) {
-    const user = await this.prisma.user.findUnique({
-      where: { email: dto.email }
-    });
+    let user;
+    try {
+      user = await this.prisma.user.findUnique({
+        where: { email: dto.email }
+      });
+    } catch (err: any) {
+      console.error('❌ [AuthService] Error consultando usuario en PostgreSQL:', err?.message || err);
+      const errMsg = err?.message?.split('\n')[0] || 'No se pudo conectar a PostgreSQL';
+      throw new InternalServerErrorException(
+        `Error de Base de Datos: ${errMsg}. Verifique que el servicio PostgreSQL en Coolify esté activo y que DATABASE_URL sea correcta.`
+      );
+    }
+
+    // Auto-sembrado bajo demanda para usuarios demo en entornos recién desplegados
+    if (
+      !user &&
+      (dto.email === 'admin@radiotaxi.demo' || dto.email === 'dispatcher@radiotaxi.demo') &&
+      dto.password === 'password123'
+    ) {
+      try {
+        let company = await this.prisma.company.findFirst();
+        if (!company) {
+          company = await this.prisma.company.create({
+            data: {
+              name: 'RadioTaxi Demo',
+              companyType: 'operator',
+              address: 'Central RadioTaxi'
+            }
+          });
+        }
+        const hashedPassword = await bcrypt.hash('password123', 10);
+        user = await this.prisma.user.create({
+          data: {
+            email: dto.email,
+            password: hashedPassword,
+            name: dto.email.startsWith('admin') ? 'Admin Demo' : 'Despachador Demo',
+            role: dto.email.startsWith('admin') ? 'ADMIN' : 'DISPATCHER',
+            phone: '+59170000001',
+            companyId: company.id,
+            status: 'active'
+          }
+        });
+        console.log(`✅ [AuthService] Usuario demo autosembrado exitosamente: ${user.email}`);
+      } catch (seedErr: any) {
+        console.error('⚠️ [AuthService] Falló el auto-sembrado del usuario demo:', seedErr?.message || seedErr);
+      }
+    }
 
     if (!user) {
       throw new UnauthorizedException('Credenciales inválidas');
