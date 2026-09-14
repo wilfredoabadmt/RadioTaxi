@@ -1,46 +1,34 @@
-# Root Dockerfile for RadioTaxi (API focus) - Debian Slim
+# Root Dockerfile for RadioTaxi (API focus) - STANDALONE Ultra Rápido
 FROM node:20-slim AS builder
-
-WORKDIR /app
-
-# Install OpenSSL
-RUN apt-get update -y && apt-get install -y openssl
-
-# Copy workspace meta
-COPY package.json package-lock.json* tsconfig.base.json ./
-COPY services/api/package.json ./services/api/
-COPY services/api/tsconfig.json ./services/api/
-
-# Install dependencies
-RUN npm install
-
-# Copy source
-COPY services/api ./services/api
-
-# Build
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 WORKDIR /app/services/api
+
+# 1) Solo dependencias de la API para caché óptima
+COPY services/api/package.json ./
+RUN npm install --no-audit --no-fund
+
+# 2) tsconfig base
+COPY tsconfig.base.json /app/tsconfig.base.json
+
+# 3) Código + cliente Prisma + build
+COPY services/api/ ./
 RUN npx prisma generate
 RUN npm run build
 
-# Runner stage
+# ── Runner ─────────────────────────────────────────────────────────────
 FROM node:20-slim
+RUN apt-get update -y && apt-get install -y openssl wget && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
+ENV NODE_ENV=production
+ENV PORT=3000
 
-RUN apt-get update -y && apt-get install -y openssl wget
-
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/services/api/node_modules ./node_modules
 COPY --from=builder /app/services/api/dist ./dist
 COPY --from=builder /app/services/api/package.json ./
 COPY --from=builder /app/services/api/prisma ./prisma
 
 EXPOSE 3000
-ENV PORT 3000
-ENV NODE_ENV production
-
-# Improved Healthcheck with longer start period (30s)
-# Pointing to /api which is the welcome endpoint
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost:3000/api || exit 1
+  CMD wget --quiet --tries=1 --spider http://localhost:3000/api/auth/health || exit 1
 
-# Start script
-CMD ["sh", "-c", "echo 'Starting API Service...' && (npx prisma migrate deploy || echo 'Warning: Migration failed, check DATABASE_URL') && node dist/main.js"]
+CMD ["sh", "-c", "echo 'Starting API...' && (npx prisma migrate deploy || echo 'WARN: migrate deploy failed') && node dist/main.js"]
