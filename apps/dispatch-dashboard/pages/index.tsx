@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/router';
+import dynamic from 'next/dynamic';
 import type { Socket } from 'socket.io-client';
-import SectionCard from '../components/SectionCard';
+import AppLayout from '../components/layout/AppLayout';
 import MapPlaceholder from '../components/MapPlaceholder';
 
+// Cargar mapa Leaflet en el cliente para evitar problemas de SSR
+const DispatchMapClient = dynamic(() => import('../components/DispatchMapClient'), {
+  ssr: false,
+  loading: () => <MapPlaceholder tripRequests={[]} vehicles={[]} />,
+});
+
 const getApiBaseUrl = () => {
-  // En producción en el navegador, usar el proxy interno de Next.js (/api-proxy)
   if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
     return '/api-proxy';
   }
@@ -22,43 +27,21 @@ const getRealtimeUrl = () => {
   return url;
 };
 
-const Home = () => {
+export default function Home() {
   const [tripRequests, setTripRequests] = useState<any[]>([]);
   const [vehicles, setVehicles] = useState<any[]>([]);
-  const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
-  
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loadingAuth, setLoadingAuth] = useState(true);
-  const [user, setUser] = useState<any>(null);
-  const router = useRouter();
 
-  // Estados de despacho asistido por IA y selección de vehículos
+  // Estados de despacho asistido por IA
   const [selectedVehicles, setSelectedVehicles] = useState<Record<number, number>>({});
   const [aiSuggestions, setAiSuggestions] = useState<Record<number, any>>({});
   const [loadingAi, setLoadingAi] = useState<Record<number, boolean>>({});
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('token');
-      const storedUser = localStorage.getItem('user');
-      if (!token) {
-        router.push('/login');
-      } else {
-        setIsAuthenticated(true);
-        if (storedUser) {
-          setUser(JSON.parse(storedUser));
-        }
-        setLoadingAuth(false);
-      }
-    }
-  }, [router]);
-
   const fetchData = async () => {
-    const token = localStorage.getItem('token');
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) return;
 
     setLoading(true);
@@ -66,22 +49,20 @@ const Home = () => {
 
     try {
       const baseUrl = getApiBaseUrl();
-      const headers = { 'Authorization': `Bearer ${token}` };
-      const [tripsRes, vehiclesRes, reportsRes] = await Promise.all([
+      const headers = { Authorization: `Bearer ${token}` };
+      const [tripsRes, vehiclesRes] = await Promise.all([
         fetch(`${baseUrl}/trip-requests`, { headers }),
         fetch(`${baseUrl}/vehicles`, { headers }),
-        fetch(`${baseUrl}/reports`, { headers })
       ]);
 
-      if (!tripsRes.ok || !vehiclesRes.ok || !reportsRes.ok) {
-        throw new Error('Error al obtener datos del servidor');
+      if (!tripsRes.ok || !vehiclesRes.ok) {
+        throw new Error('Error al sincronizar datos del servidor');
       }
 
       setTripRequests(await tripsRes.json());
       setVehicles(await vehiclesRes.json());
-      setReports(await reportsRes.json());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+    } catch (err: any) {
+      setError(err?.message || 'Error desconocido al conectar con la API');
     } finally {
       setLoading(false);
     }
@@ -90,12 +71,15 @@ const Home = () => {
   const assignTrip = (tripRequestId: number, vehicleId: number) => {
     if (socket && vehicleId) {
       socket.emit('trip:assign', { tripRequestId, vehicleId });
+      // Remover optimista
+      setTripRequests((prev) => prev.filter((r) => r.id !== tripRequestId));
     }
   };
 
   const completeTrip = (vehicleId: number) => {
     if (socket) {
       socket.emit('trip:complete', { vehicleId });
+      fetchData();
     }
   };
 
@@ -104,49 +88,40 @@ const Home = () => {
     const token = localStorage.getItem('token');
     if (!token) return;
 
-    setLoadingAi(prev => ({ ...prev, [request.id]: true }));
+    setLoadingAi((prev) => ({ ...prev, [request.id]: true }));
     try {
       const baseUrl = getApiBaseUrl();
-      const availableVehicles = vehicles.filter(v => v.status === 'available');
+      const availableVehicles = vehicles.filter((v) => v.status === 'available');
+
       const res = await fetch(`${baseUrl}/ai/dispatch/suggest`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           tripRequest: request,
-          vehicles: availableVehicles
-        })
+          vehicles: availableVehicles,
+        }),
       });
 
       if (res.ok) {
         const suggestion = await res.json();
-        setAiSuggestions(prev => ({ ...prev, [request.id]: suggestion }));
+        setAiSuggestions((prev) => ({ ...prev, [request.id]: suggestion }));
         if (suggestion.recommendedVehicleId) {
-          setSelectedVehicles(prev => ({ ...prev, [request.id]: suggestion.recommendedVehicleId }));
+          setSelectedVehicles((prev) => ({ ...prev, [request.id]: suggestion.recommendedVehicleId }));
         }
       }
     } catch (err) {
       console.error('Error al invocar despacho IA:', err);
     } finally {
-      setLoadingAi(prev => ({ ...prev, [request.id]: false }));
+      setLoadingAi((prev) => ({ ...prev, [request.id]: false }));
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    router.push('/login');
-  };
-
   useEffect(() => {
-    if (!isAuthenticated) return;
     fetchData();
-  }, [isAuthenticated]);
 
-  useEffect(() => {
-    if (!isAuthenticated) return;
     if (typeof window === 'undefined') return;
 
     let socketInstance: Socket | null = null;
@@ -154,17 +129,15 @@ const Home = () => {
 
     import('socket.io-client').then(({ io }) => {
       socketInstance = io(getRealtimeUrl(), {
-        auth: { token }
+        auth: { token },
       });
       setSocket(socketInstance);
 
       socketInstance.on('connect', () => {
-        console.log('Conectado al servicio de tiempo real');
         setRealtimeConnected(true);
       });
 
       socketInstance.on('disconnect', () => {
-        console.log('Desconectado del servicio de tiempo real');
         setRealtimeConnected(false);
       });
 
@@ -177,222 +150,255 @@ const Home = () => {
       });
 
       socketInstance.on('trip:assigned', (data) => {
-        setTripRequests(prev => prev.filter(req => req.id !== data.tripRequestId));
+        setTripRequests((prev) => prev.filter((req) => req.id !== data.tripRequestId));
       });
     });
 
     return () => {
       socketInstance?.disconnect();
     };
-  }, [isAuthenticated]);
+  }, []);
 
-  if (loadingAuth) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <span className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  const availableVehicles = vehicles.filter(v => v.status === 'available');
+  const availableVehicles = vehicles.filter((v) => v.status === 'available');
+  const busyVehicles = vehicles.filter((v) => v.status === 'busy');
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900 p-6 md:p-10 font-sans">
-      <div className="max-w-7xl mx-auto space-y-8">
-        {/* Top Navbar */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <AppLayout
+      title="Centro de Despacho en Vivo | RadioTaxi SaaS"
+      realtimeConnected={realtimeConnected}
+      onRefresh={fetchData}
+      loading={loading}
+    >
+      <div className="space-y-6">
+        {/* Encabezado y Métricas Rápidas */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-3">
-              <span className="text-3xl">🚕</span>
-              <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-                RadioTaxi <span className="text-indigo-600">SaaS Dispatch</span>
-              </h1>
-            </div>
-            <div className="flex items-center gap-3 mt-2 text-xs font-semibold">
-              <span className={`px-2.5 py-1 rounded-full flex items-center gap-1.5 ${realtimeConnected ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                <span className={`w-2 h-2 rounded-full ${realtimeConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-                {realtimeConnected ? 'Telemetría en Vivo Conectada' : 'Realtime Desconectado'}
-              </span>
-              <span className="bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-full">
-                API: {loading ? 'Sincronizando...' : 'Online'}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            {user && (
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-bold text-slate-800">{user.email}</p>
-                <p className="text-xs text-indigo-600 font-semibold uppercase">{user.role}</p>
-              </div>
-            )}
-            <button
-              onClick={fetchData}
-              className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-medium transition"
-            >
-              🔄 Actualizar
-            </button>
-            <button
-              onClick={handleLogout}
-              className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition"
-            >
-              Cerrar Sesión
-            </button>
+            <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
+              <span>🚖</span> Centro de Despacho Operativo
+            </h1>
+            <p className="text-sm text-slate-400">
+              Monitoreo cartográfico en vivo y asignación asistida por IA para RadioTaxi Bolivia.
+            </p>
           </div>
         </div>
 
-        {/* Métricas rápidas */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Solicitudes Pendientes</p>
-            <p className="text-4xl font-black text-indigo-600 mt-2">{tripRequests.length}</p>
-            <p className="text-xs text-slate-500 mt-1">En cola de despacho</p>
+        {/* Tarjetas KPI de Estado */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 backdrop-blur-xl">
+            <span className="text-xs text-slate-500 font-mono block uppercase">Solicitudes en Cola</span>
+            <span className="text-3xl font-black text-white mt-1 block">{tripRequests.length}</span>
+            <span className="text-[11px] text-cyan-400 mt-1 block">Pasajeros esperando</span>
           </div>
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Vehículos en Flota</p>
-            <p className="text-4xl font-black text-emerald-600 mt-2">
-              {availableVehicles.length} <span className="text-sm font-semibold text-slate-400">/ {vehicles.length} disp.</span>
-            </p>
-            <p className="text-xs text-slate-500 mt-1">Monitoreados por telemetría GPS</p>
+
+          <div className="bg-emerald-950/20 border border-emerald-500/30 rounded-2xl p-4 backdrop-blur-xl">
+            <span className="text-xs text-emerald-400 font-mono block uppercase">Taxis Libres</span>
+            <span className="text-3xl font-black text-emerald-300 mt-1 block">{availableVehicles.length}</span>
+            <span className="text-[11px] text-emerald-500/80 mt-1 block">Listos para asignar</span>
           </div>
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Despacho Asistido</p>
-            <p className="text-2xl font-black text-amber-500 mt-2 flex items-center gap-1">
-              <span>✨ Gemini AI</span>
-            </p>
-            <p className="text-xs text-slate-500 mt-1">Optimización por distancia y tiempo</p>
+
+          <div className="bg-amber-950/20 border border-amber-500/30 rounded-2xl p-4 backdrop-blur-xl">
+            <span className="text-xs text-amber-400 font-mono block uppercase">En Ruta</span>
+            <span className="text-3xl font-black text-amber-300 mt-1 block">{busyVehicles.length}</span>
+            <span className="text-[11px] text-amber-500/80 mt-1 block">Carrera en curso</span>
+          </div>
+
+          <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 backdrop-blur-xl">
+            <span className="text-xs text-slate-500 font-mono block uppercase">Flota Monitoreada</span>
+            <span className="text-3xl font-black text-indigo-300 mt-1 block">{vehicles.length}</span>
+            <span className="text-[11px] text-slate-400 mt-1 block">Telemetría activa</span>
           </div>
         </div>
 
-        {/* Mapa en vivo */}
-        <SectionCard title="Mapa Operativo de Telemetría GPS" description="Ubicación en tiempo real de vehículos y puntos de recogida en La Paz.">
-          <MapPlaceholder tripRequests={tripRequests} vehicles={vehicles} />
-        </SectionCard>
+        {error && (
+          <div className="p-4 rounded-xl bg-red-950/40 border border-red-500/40 text-red-300 text-xs">
+            ⚠️ {error}
+          </div>
+        )}
 
-        {/* Cola de solicitudes con despacho asistido por IA */}
-        <SectionCard title="Cola de Solicitudes de Viaje" description="Asigna vehículos manual o inteligentemente con sugerencias de IA.">
-          {tripRequests.length === 0 ? (
-            <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-              <span className="text-4xl">🚕</span>
-              <p className="text-base font-semibold text-slate-700 mt-2">No hay solicitudes pendientes en este momento</p>
-              <p className="text-xs text-slate-400">Las solicitudes emitidas por la app de clientes aparecerán aquí automáticamente.</p>
+        {/* Layout en dos columnas: Mapa en Vivo (7 cols) vs Cola de Despacho (5 cols) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Mapa Leaflet */}
+          <div className="lg:col-span-7 bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 backdrop-blur-xl flex flex-col">
+            <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
+              <span className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                <span>🗺️</span> Telemetría de Flota (La Paz / El Alto)
+              </span>
+              <span className="text-[11px] font-mono text-cyan-400">
+                {vehicles.filter((v) => v.currentLat && v.currentLng).length} GPS Transmitiendo
+              </span>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {tripRequests.map((request) => {
-                const suggestion = aiSuggestions[request.id];
-                const isAiLoading = loadingAi[request.id];
-                const selectedVehicleId = selectedVehicles[request.id] || '';
 
-                return (
-                  <div key={request.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 hover:border-indigo-300 transition">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <span className="text-xs font-bold bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg">
-                          Solicitud #{request.id}
+            <div className="h-[460px] w-full rounded-xl overflow-hidden border border-slate-800">
+              <DispatchMapClient
+                vehicles={vehicles}
+                centerLat={-16.5}
+                centerLng={-68.15}
+                zoom={13}
+              />
+            </div>
+          </div>
+
+          {/* Cola de Solicitudes y Despacho con IA */}
+          <div className="lg:col-span-5 bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 backdrop-blur-xl flex flex-col">
+            <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
+              <span className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                <span>⚡</span> Solicitudes Pendientes ({tripRequests.length})
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                DESPACHO INTELIGENTE
+              </span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 max-h-[460px] pr-1">
+              {tripRequests.length === 0 ? (
+                <div className="h-64 flex flex-col items-center justify-center text-center p-6 border border-dashed border-slate-800 rounded-xl">
+                  <span className="text-3xl mb-2">✨</span>
+                  <p className="text-sm font-bold text-slate-300">No hay solicitudes pendientes</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Las carreras solicitadas por clientes o call center aparecerán aquí al instante.
+                  </p>
+                </div>
+              ) : (
+                tripRequests.map((request) => {
+                  const suggestion = aiSuggestions[request.id];
+                  const isAiLoading = loadingAi[request.id];
+                  const selectedVehicleId = selectedVehicles[request.id] || '';
+
+                  return (
+                    <div
+                      key={request.id}
+                      className="p-4 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-3 hover:border-slate-700 transition"
+                    >
+                      {/* Cabecera del pedido */}
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs font-bold text-cyan-400">
+                          #{request.id} • {request.passengerName || 'Pasajero'}
                         </span>
-                        <p className="text-xs text-slate-400 mt-1">
-                          {new Date(request.requestedAt).toLocaleTimeString()}
-                        </p>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                          PENDIENTE
+                        </span>
                       </div>
-                      <span className="text-xs font-bold uppercase bg-amber-100 text-amber-800 px-2 py-0.5 rounded">
-                        {request.status}
-                      </span>
-                    </div>
 
-                    <div className="space-y-1.5 text-sm">
-                      <p className="flex items-center gap-2 text-slate-800 font-medium">
-                        <span>📍</span> <span className="truncate">{request.originAddress || 'Origen por coordenadas'}</span>
-                      </p>
-                      <p className="flex items-center gap-2 text-slate-600 text-xs">
-                        <span>🏁</span> <span className="truncate">{request.destinationAddress || 'Destino no especificado'}</span>
-                      </p>
-                    </div>
-
-                    {/* Caja de sugerencia IA si está disponible */}
-                    {suggestion && (
-                      <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-xs space-y-1">
-                        <div className="flex items-center justify-between font-bold text-indigo-950">
-                          <span className="flex items-center gap-1">✨ Recomendación IA ({suggestion.source}):</span>
-                          <span>Vehículo #{suggestion.recommendedVehicleId}</span>
+                      {/* Direcciones */}
+                      <div className="space-y-1 text-xs">
+                        <div className="flex items-center gap-1.5 text-slate-200">
+                          <span className="text-emerald-400">●</span>
+                          <span className="truncate">{request.originAddress || 'Origen por GPS'}</span>
                         </div>
-                        <p className="text-indigo-800">{suggestion.reason}</p>
+                        <div className="flex items-center gap-1.5 text-slate-400">
+                          <span className="text-red-400">●</span>
+                          <span className="truncate">{request.destinationAddress || 'Destino a convenir'}</span>
+                        </div>
                       </div>
-                    )}
 
-                    {/* Controles de asignación */}
-                    <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row gap-2">
-                      <select
-                        value={selectedVehicleId}
-                        onChange={(e) => setSelectedVehicles(prev => ({ ...prev, [request.id]: parseInt(e.target.value) }))}
-                        className="flex-1 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        <option value="">Seleccionar vehículo ({availableVehicles.length} disponibles)</option>
-                        {availableVehicles.map((v) => (
-                          <option key={v.id} value={v.id}>
-                            🚗 {v.plate} ({v.brand || 'Vehículo'} {v.model || ''})
-                          </option>
-                        ))}
-                      </select>
+                      {/* Tarjeta sugerencia IA */}
+                      {suggestion && (
+                        <div className="p-2.5 rounded-xl bg-indigo-950/30 border border-indigo-500/30 text-[11px] space-y-1">
+                          <div className="flex items-center justify-between font-bold text-indigo-300">
+                            <span>✨ Gemini IA ({suggestion.source}):</span>
+                            <span>Vehículo #{suggestion.recommendedVehicleId}</span>
+                          </div>
+                          <p className="text-indigo-200/80">{suggestion.reason}</p>
+                        </div>
+                      )}
 
-                      <button
-                        type="button"
-                        onClick={() => requestAiSuggestion(request)}
-                        disabled={isAiLoading || availableVehicles.length === 0}
-                        className="bg-purple-100 hover:bg-purple-200 text-purple-900 px-3 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 disabled:opacity-50"
-                      >
-                        {isAiLoading ? 'Analizando...' : '✨ Sugerir con IA'}
-                      </button>
+                      {/* Selector de vehículo y asignación */}
+                      <div className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-slate-800/60">
+                        <select
+                          value={selectedVehicleId}
+                          onChange={(e) =>
+                            setSelectedVehicles((prev) => ({
+                              ...prev,
+                              [request.id]: parseInt(e.target.value),
+                            }))
+                          }
+                          className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+                        >
+                          <option value="">Seleccionar ({availableVehicles.length} libres)</option>
+                          {availableVehicles.map((v) => (
+                            <option key={v.id} value={v.id}>
+                              🚗 {v.plate} ({v.brand} {v.model})
+                            </option>
+                          ))}
+                        </select>
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const vId = selectedVehicles[request.id];
-                          if (vId) assignTrip(request.id, vId);
-                        }}
-                        disabled={!selectedVehicles[request.id]}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition disabled:opacity-40"
-                      >
-                        Asignar
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => requestAiSuggestion(request)}
+                          disabled={isAiLoading || availableVehicles.length === 0}
+                          className="px-2.5 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-bold transition disabled:opacity-40"
+                        >
+                          {isAiLoading ? 'Analizando...' : '✨ IA'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const vId = selectedVehicles[request.id];
+                            if (vId) assignTrip(request.id, vId);
+                          }}
+                          disabled={!selectedVehicles[request.id]}
+                          className="px-3.5 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold transition disabled:opacity-40"
+                        >
+                          Asignar
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
-          )}
-        </SectionCard>
+          </div>
+        </div>
 
-        {/* Flota de vehículos */}
-        <SectionCard title="Estado Operativo de la Flota" description="Vehículos disponibles y en ruta con telemetría.">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+        {/* Resumen Operativo de Unidades en Ruta */}
+        <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 backdrop-blur-xl">
+          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
+            <span className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+              Unidades en Operación Activa
+            </span>
+            <span className="text-xs text-slate-400">
+              {busyVehicles.length} unidades ocupadas / {availableVehicles.length} disponibles
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
             {vehicles.map((vehicle) => (
-              <div key={vehicle.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+              <div
+                key={vehicle.id}
+                className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 flex items-center justify-between"
+              >
                 <div>
-                  <p className="font-bold text-slate-800 text-sm">{vehicle.plate}</p>
-                  <p className="text-xs text-slate-500">{vehicle.brand} {vehicle.model} ({vehicle.vehicleType || 'sedan'})</p>
-                  <span className={`inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                    vehicle.status === 'available' ? 'bg-emerald-100 text-emerald-800' :
-                    vehicle.status === 'busy' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
-                  }`}>
+                  <span className="font-mono font-bold text-white text-sm block">{vehicle.plate}</span>
+                  <span className="text-[11px] text-slate-400 block">
+                    {vehicle.brand} {vehicle.model}
+                  </span>
+                  <span
+                    className={`inline-block mt-1 px-1.5 py-0.2 rounded text-[9px] font-mono font-bold uppercase ${
+                      vehicle.status === 'available'
+                        ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                        : vehicle.status === 'busy'
+                        ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                        : 'bg-slate-500/10 text-slate-400 border border-slate-500/30'
+                    }`}
+                  >
                     {vehicle.status}
                   </span>
                 </div>
+
                 {vehicle.status === 'busy' && (
                   <button
                     onClick={() => completeTrip(vehicle.id)}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"
+                    className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[11px] font-bold transition"
                   >
-                    Completar
+                    Liberar
                   </button>
                 )}
               </div>
             ))}
           </div>
-        </SectionCard>
+        </div>
       </div>
-    </main>
+    </AppLayout>
   );
-};
-
-export default Home;
+}
