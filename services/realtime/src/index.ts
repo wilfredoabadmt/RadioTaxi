@@ -314,6 +314,56 @@ async function completeTripByVehicle(
 }
 
 /**
+ * Cancela un viaje activo y libera los recursos (Fase 2.10).
+ */
+async function cancelTrip(tripId: number, reason?: string) {
+  const trip = await prisma.trip.findUnique({
+    where: { id: tripId },
+  });
+
+  if (!trip) {
+    throw new Error(`Viaje #${tripId} no encontrado`);
+  }
+
+  if (['COMPLETED', 'CANCELLED'].includes(trip.status)) {
+    throw new Error(`El viaje #${tripId} ya está en estado terminal (${trip.status})`);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.trip.update({
+      where: { id: tripId },
+      data: { status: 'CANCELLED' },
+    });
+
+    await tx.tripRequest.update({
+      where: { id: trip.tripRequestId },
+      data: { status: 'CANCELLED' },
+    });
+
+    if (trip.vehicleId) {
+      await tx.vehicle.update({
+        where: { id: trip.vehicleId },
+        data: { status: 'available' },
+      });
+    }
+
+    if (trip.driverId) {
+      await tx.driver.update({
+        where: { id: trip.driverId },
+        data: { status: 'available' },
+      });
+    }
+  });
+
+  return {
+    tripId,
+    tripRequestId: trip.tripRequestId,
+    status: 'CANCELLED',
+    reason: reason || 'Cancelado por usuario o despacho',
+  };
+}
+
+/**
  * Actualiza la posición GPS de un vehículo (viene de la driver-app).
  */
 async function updateVehiclePosition(
@@ -557,6 +607,116 @@ io.on('connection', async (socket: Socket) => {
       const message = err instanceof Error ? err.message : 'Error al actualizar posición';
       console.error('[realtime] vehicle:update:', message);
     }
+  });
+
+  // Cancelar viaje (Fase 2.10) — ADMIN, DISPATCHER o DRIVER
+  socket.on('trip:cancel', async (data: { tripId: number; reason?: string }) => {
+    try {
+      if (!hasRole(socket, 'ADMIN', 'DISPATCHER', 'DRIVER')) {
+        socket.emit('trip:cancel:error', { message: 'No autorizado' });
+        return;
+      }
+      const result = await cancelTrip(data.tripId, data.reason);
+      console.log(`[realtime] Viaje cancelado: trip=${data.tripId} motivo="${result.reason}"`);
+
+      socket.emit('trip:cancel:ok', result);
+      io.to(`trip:${data.tripId}`).emit('trip:cancelled', result);
+      io.emit('trip:cancelled', result);
+
+      await broadcastVehicles(io);
+      await broadcastPendingRequests(io);
+    } catch (err: any) {
+      console.error('[realtime] trip:cancel:', err.message);
+      socket.emit('trip:cancel:error', { message: err.message });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Flujo de Oferta / Aceptación / Rechazo por Conductor (Fase 2.8)
+  // ---------------------------------------------------------------------------
+
+  // Despacho envía oferta de viaje a conductor específico
+  socket.on('trip:offer', async (data: {
+    tripRequestId: number;
+    driverId: number;
+    timeoutSeconds?: number;
+  }) => {
+    try {
+      if (!hasRole(socket, 'ADMIN', 'DISPATCHER')) {
+        socket.emit('trip:offer:error', { message: 'No autorizado para despachar ofertas' });
+        return;
+      }
+
+      const req = await prisma.tripRequest.findUnique({
+        where: { id: data.tripRequestId },
+      });
+
+      if (!req || req.status !== 'PENDING') {
+        throw new Error(`Solicitud #${data.tripRequestId} no disponible para oferta`);
+      }
+
+      const offerPayload = {
+        offerId: `OFFER-${Date.now()}-${data.tripRequestId}`,
+        tripRequestId: data.tripRequestId,
+        originAddress: req.originAddress || 'Origen por GPS',
+        destinationAddress: req.destinationAddress || 'Destino a convenir',
+        timeoutSeconds: data.timeoutSeconds || 30,
+        offeredAt: new Date().toISOString(),
+      };
+
+      // Emitir exclusivamente a la sala privada del chofer (Fase 2.9)
+      io.to(`driver:${data.driverId}`).emit('trip:offered', offerPayload);
+      socket.emit('trip:offer:sent', { driverId: data.driverId, ...offerPayload });
+      console.log(`[realtime] 📨 Oferta enviada para solicitud #${data.tripRequestId} a conductor #${data.driverId}`);
+    } catch (err: any) {
+      socket.emit('trip:offer:error', { message: err.message });
+    }
+  });
+
+  // Conductor acepta la oferta recibida
+  socket.on('trip:accept', async (data: { tripRequestId: number; vehicleId: number }) => {
+    try {
+      if (!hasRole(socket, 'DRIVER')) {
+        socket.emit('trip:accept:error', { message: 'Solo conductores pueden aceptar ofertas' });
+        return;
+      }
+
+      const result = await assignTrip(data.tripRequestId, data.vehicleId);
+      console.log(`[realtime] ✅ Oferta aceptada por conductor: request=${data.tripRequestId} -> trip=${result.trip.id}`);
+
+      socket.emit('trip:accepted:ok', result);
+      io.to(`driver:${user!.id}`).emit('trip:assigned', {
+        tripRequestId: data.tripRequestId,
+        vehicleId: data.vehicleId,
+        tripId: result.trip.id,
+      });
+      io.to(`trip:${result.trip.id}`).emit('trip:assigned', {
+        tripRequestId: data.tripRequestId,
+        vehicleId: data.vehicleId,
+        tripId: result.trip.id,
+      });
+      io.emit('trip:assigned', {
+        tripRequestId: data.tripRequestId,
+        vehicleId: data.vehicleId,
+        tripId: result.trip.id,
+      });
+
+      await broadcastVehicles(io);
+      await broadcastPendingRequests(io);
+    } catch (err: any) {
+      socket.emit('trip:accept:error', { message: err.message });
+    }
+  });
+
+  // Conductor rechaza la oferta
+  socket.on('trip:reject', (data: { tripRequestId: number; reason?: string }) => {
+    const driverId = user?.id;
+    console.log(`[realtime] ❌ Conductor #${driverId} rechazó la solicitud #${data.tripRequestId}`);
+    io.emit('trip:offer_rejected', {
+      tripRequestId: data.tripRequestId,
+      driverId,
+      reason: data.reason || 'Rechazado por el conductor',
+    });
   });
 
   // ---------------------------------------------------------------------------

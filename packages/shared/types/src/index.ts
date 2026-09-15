@@ -188,6 +188,9 @@ export interface ClientToServerEvents {
   'trip:arrived': (data: { tripId: number }, callback?: (res: any) => void) => void;
   'trip:complete': (data: { tripId?: number; vehicleId?: number }, callback?: (res: any) => void) => void;
   'trip:cancel': (data: { tripId: number; reason?: string }, callback?: (res: any) => void) => void;
+  'trip:offer': (data: { tripRequestId: number; driverId: number; timeoutSeconds?: number }, callback?: (res: any) => void) => void;
+  'trip:accept': (data: { tripRequestId: number; vehicleId: number }, callback?: (res: any) => void) => void;
+  'trip:reject': (data: { tripRequestId: number; reason?: string }, callback?: (res: any) => void) => void;
   'vehicle:update': (data: { vehicleId: number; lat: number; lng: number; speed?: number }) => void;
   'room:join': (room: string) => void;
   'room:leave': (room: string) => void;
@@ -197,6 +200,17 @@ export interface ServerToClientEvents {
   'vehicles:update': (vehicles: VehicleDTO[]) => void;
   'trip-requests:update': (requests: TripRequestDTO[]) => void;
   'trip:status_changed': (trip: TripDTO) => void;
+  'trip:assigned': (data: { tripRequestId: number; vehicleId: number; tripId: number }) => void;
+  'trip:offered': (data: {
+    offerId: string;
+    tripRequestId: number;
+    originAddress?: string | null;
+    destinationAddress?: string | null;
+    timeoutSeconds: number;
+    offeredAt: string;
+  }) => void;
+  'trip:offer_rejected': (data: { tripRequestId: number; driverId?: number; reason: string }) => void;
+  'trip:cancelled': (data: { tripId: number; tripRequestId: number; status: string; reason?: string }) => void;
   'vehicle:location_changed': (data: { vehicleId: number; lat: number; lng: number }) => void;
   'notification': (data: { message: string; type: 'info' | 'warning' | 'error' | 'success' }) => void;
 }

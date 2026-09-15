@@ -43,8 +43,11 @@ jobs:
         run: npx tsc --noEmit
         working-directory: apps/dispatch-dashboard
 
-      - name: Run Jest Unit Tests
+      - name: Run Jest Unit Tests - services/api
         run: npm test -w services/api
+
+      - name: Run Jest Unit Tests - services/realtime
+        run: npm test -w services/realtime
 
   docker-build:
     name: Verify Docker Container Builds
