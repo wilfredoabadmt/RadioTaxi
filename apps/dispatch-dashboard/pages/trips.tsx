@@ -73,6 +73,16 @@ export default function TripsPage() {
   const [qrIntentData, setQrIntentData] = useState<any | null>(null);
   const [submittingPayment, setSubmittingPayment] = useState(false);
 
+  // Estados para Facturación Fiscal Boliviana SIN (Fase 7.7)
+  const [selectedFiscalInvoice, setSelectedFiscalInvoice] = useState<any | null>(null);
+  const [fiscalTrip, setFiscalTrip] = useState<any | null>(null);
+  const [fiscalForm, setFiscalForm] = useState({
+    clientNit: '',
+    clientBusinessName: '',
+    clientEmail: '',
+  });
+  const [issuingInvoice, setIssuingInvoice] = useState(false);
+
   const fetchTrips = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) return;
@@ -203,6 +213,77 @@ export default function TripsPage() {
       setError(err.message);
     } finally {
       setSubmittingPayment(false);
+    }
+  };
+
+  // Abrir o Consultar Factura Fiscal Boliviana (Fase 7.7)
+  const handleOpenFiscalInvoice = async (trip: any) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) return;
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/payments/fiscal-invoice/${trip.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        const invoice = await res.json();
+        if (invoice && invoice.controlCode) {
+          setSelectedFiscalInvoice(invoice);
+          return;
+        }
+      }
+    } catch {
+      // Si aún no está emitida, abrir formulario
+    }
+
+    // Abrir formulario para emitir factura fiscal con NIT
+    setFiscalTrip(trip);
+    setFiscalForm({
+      clientNit: trip.passenger?.nit || trip.tripRequest?.customer?.nit || '',
+      clientBusinessName: trip.passenger?.name || trip.tripRequest?.customer?.name || 'CONSUMIDOR FINAL',
+      clientEmail: trip.passenger?.email || trip.tripRequest?.customer?.email || '',
+    });
+  };
+
+  // Emitir Factura Fiscal con Código de Control v7
+  const handleIssueFiscalInvoiceSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token || !fiscalTrip) return;
+
+    setIssuingInvoice(true);
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/payments/fiscal-invoice`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          tripId: fiscalTrip.id,
+          clientNit: fiscalForm.clientNit || '0',
+          clientBusinessName: fiscalForm.clientBusinessName || 'CONSUMIDOR FINAL',
+          clientEmail: fiscalForm.clientEmail,
+          paymentMethod: fiscalTrip.paymentMethod || 'cash',
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || 'Error al emitir la factura fiscal');
+      }
+
+      const invoiceData = await res.json();
+      setFiscalTrip(null);
+      setSelectedFiscalInvoice(invoiceData);
+      showNotification(`Factura Fiscal N° ${invoiceData.invoiceNumber} emitida exitosamente.`);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIssuingInvoice(false);
     }
   };
 
@@ -418,14 +499,21 @@ export default function TripsPage() {
                           <div className="flex items-center justify-center gap-1.5">
                             <button
                               onClick={() => handleOpenReceipt(trip.id)}
-                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-mono text-[11px] transition flex items-center gap-1"
+                              className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-mono text-[11px] transition flex items-center gap-1"
                               title="Ver Comprobante Digital"
                             >
                               <span>📄</span> Recibo
                             </button>
                             <button
+                              onClick={() => handleOpenFiscalInvoice(trip)}
+                              className="px-2 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 font-mono text-[11px] font-bold transition flex items-center gap-1"
+                              title="Emitir / Ver Factura Fiscal Boliviana (SIN)"
+                            >
+                              <span>📑</span> Factura
+                            </button>
+                            <button
                               onClick={() => handleOpenPayment(trip)}
-                              className="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 font-mono text-[11px] font-bold transition flex items-center gap-1"
+                              className="px-2 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 font-mono text-[11px] font-bold transition flex items-center gap-1"
                               title="Liquidar o Confirmar Pago"
                             >
                               <span>💳</span> Cobro
@@ -657,6 +745,227 @@ export default function TripsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Formulario para Emitir Factura Fiscal con NIT (Fase 7.7) */}
+      {fiscalTrip && !selectedFiscalInvoice && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-slate-200">
+            <div className="border-b border-slate-800 pb-3 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <span>📑</span> Emisión de Factura Fiscal (SIN)
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Carrera #{fiscalTrip.id} • Monto: Bs {Number(fiscalTrip.fareTotal || 25.0).toFixed(2)}
+                </p>
+              </div>
+              <button
+                onClick={() => setFiscalTrip(null)}
+                className="text-slate-400 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleIssueFiscalInvoiceSubmit} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-slate-400 font-mono mb-1">
+                  NIT O CARNET DE IDENTIDAD (CI) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej. 1028374029 o 0 para Consumidor Final"
+                  value={fiscalForm.clientNit}
+                  onChange={(e) => setFiscalForm({ ...fiscalForm, clientNit: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 font-mono mb-1">
+                  RAZÓN SOCIAL / NOMBRE COMPLETO *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej. BANCO MERCANTIL SANTA CRUZ S.A."
+                  value={fiscalForm.clientBusinessName}
+                  onChange={(e) => setFiscalForm({ ...fiscalForm, clientBusinessName: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 font-mono mb-1">
+                  CORREO ELECTRÓNICO (ENVÍO DIGITAL)
+                </label>
+                <input
+                  type="email"
+                  placeholder="cliente@empresa.bo"
+                  value={fiscalForm.clientEmail}
+                  onChange={(e) => setFiscalForm({ ...fiscalForm, clientEmail: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="p-3 rounded-xl bg-indigo-950/30 border border-indigo-500/20 text-[11px] text-indigo-200">
+                ℹ️ La factura se generará con Código de Control v7 y cadena para código QR interoperable con el Servicio de Impuestos Nacionales (SIN).
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setFiscalTrip(null)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={issuingInvoice}
+                  className="px-5 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 transition disabled:opacity-50"
+                >
+                  {issuingInvoice ? 'Emitiendo...' : 'Emitir Factura Fiscal'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Visor / Impresión de Factura Fiscal Oficial Boliviana (Fase 7.7) */}
+      {selectedFiscalInvoice && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 animate-scaleUp text-slate-200 print:bg-white print:text-black">
+            {/* Cabecera y Cuadro Tributario Oficial */}
+            <div className="border-b border-slate-800 pb-4 flex items-start justify-between">
+              <div>
+                <h3 className="font-bold text-white text-base uppercase">
+                  {selectedFiscalInvoice.issuer?.name || 'RadioTaxi Bolivia S.R.L.'}
+                </h3>
+                <p className="text-slate-400 text-xs">CASA MATRIZ: {selectedFiscalInvoice.issuer?.address}</p>
+                <p className="text-slate-400 text-xs">TELÉFONO: {selectedFiscalInvoice.issuer?.phone}</p>
+                <p className="text-slate-400 text-xs">{selectedFiscalInvoice.issuer?.city}</p>
+              </div>
+
+              {/* Cuadro NIT / N° Factura / Autorización */}
+              <div className="border-2 border-indigo-500/60 rounded-xl p-2.5 bg-indigo-950/20 text-right text-xs font-mono">
+                <div>NIT: <strong className="text-white">{selectedFiscalInvoice.issuer?.nit}</strong></div>
+                <div>FACTURA N°: <strong className="text-indigo-400">{selectedFiscalInvoice.invoiceNumber}</strong></div>
+                <div>AUTORIZACIÓN: <span className="text-[11px] text-slate-300">{selectedFiscalInvoice.authorizationNumber}</span></div>
+              </div>
+            </div>
+
+            <div className="text-center font-bold font-mono text-sm tracking-wider text-cyan-400">
+              FACTURA
+              <span className="block text-[10px] text-slate-400 font-sans font-normal">
+                (Con Derecho a Crédito Fiscal)
+              </span>
+            </div>
+
+            {/* Datos del Cliente */}
+            <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800/80 text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Fecha de Emisión:</span>
+                <span className="font-mono text-white">{selectedFiscalInvoice.issuedAt?.slice(0, 10)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Señor(es):</span>
+                <span className="font-bold text-white uppercase">{selectedFiscalInvoice.client?.businessName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">NIT / CI:</span>
+                <span className="font-mono font-bold text-cyan-300">{selectedFiscalInvoice.client?.nit}</span>
+              </div>
+            </div>
+
+            {/* Concepto y Detalle Económico */}
+            <table className="w-full text-xs text-left border-y border-slate-800 py-2">
+              <thead className="text-[10px] text-slate-400 font-mono uppercase">
+                <tr>
+                  <th className="py-1">Cant.</th>
+                  <th className="py-1">Concepto</th>
+                  <th className="py-1 text-right">P. Unit</th>
+                  <th className="py-1 text-right">Subtotal</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/50">
+                <tr>
+                  <td className="py-2 font-mono">1</td>
+                  <td className="py-2">
+                    <span className="font-medium text-slate-200 block">Servicio de Radiotaxi / Transporte de Pasajeros</span>
+                    <span className="text-[10px] text-slate-400 block truncate">
+                      {selectedFiscalInvoice.tripDetails?.origin} → {selectedFiscalInvoice.tripDetails?.destination}
+                    </span>
+                  </td>
+                  <td className="py-2 text-right font-mono">
+                    Bs {Number(selectedFiscalInvoice.financialBreakdown?.subtotal || 25.0).toFixed(2)}
+                  </td>
+                  <td className="py-2 text-right font-mono font-bold text-white">
+                    Bs {Number(selectedFiscalInvoice.financialBreakdown?.total || 25.0).toFixed(2)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            {/* Resumen Fiscal de Impuestos */}
+            <div className="space-y-1 text-xs border-b border-slate-800 pb-3">
+              <div className="flex justify-between font-bold text-sm">
+                <span>TOTAL A PAGAR:</span>
+                <span className="font-mono text-cyan-300">
+                  Bs {Number(selectedFiscalInvoice.financialBreakdown?.total || 25.0).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-400 text-[11px]">
+                <span>Importe Base Crédito Fiscal:</span>
+                <span className="font-mono">
+                  Bs {Number(selectedFiscalInvoice.financialBreakdown?.baseTaxCredit || 25.0).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between text-indigo-300 font-medium text-[11px]">
+                <span>Crédito Fiscal IVA (13%):</span>
+                <span className="font-mono">
+                  Bs {Number(selectedFiscalInvoice.financialBreakdown?.ivaTaxCredit || 3.25).toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            {/* Código de Control y Datos Técnicos SIN */}
+            <div className="flex items-center justify-between text-[11px] font-mono bg-slate-950/70 p-2.5 rounded-xl border border-slate-800">
+              <div>
+                <span className="text-slate-500 block text-[9px] uppercase">Código de Control (v7):</span>
+                <strong className="text-purple-300 text-xs tracking-wider">{selectedFiscalInvoice.controlCode}</strong>
+              </div>
+              <div className="text-right">
+                <span className="text-slate-500 block text-[9px] uppercase">Fecha Límite de Emisión:</span>
+                <span className="text-slate-300">{selectedFiscalInvoice.limitEmissionDate || '31/12/2026'}</span>
+              </div>
+            </div>
+
+            {/* Leyenda Fiscal Oficial Ley 453 */}
+            <div className="p-2 bg-slate-950/40 rounded-lg text-[9px] text-slate-400 text-center leading-tight">
+              &quot;{selectedFiscalInvoice.legend}&quot;
+            </div>
+
+            {/* Acciones */}
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setSelectedFiscalInvoice(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition text-xs"
+              >
+                Cerrar
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/20 transition flex items-center gap-1 text-xs"
+              >
+                <span>🖨️</span> Imprimir Factura
+              </button>
+            </div>
           </div>
         </div>
       )}

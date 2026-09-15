@@ -11,6 +11,7 @@ import { PaymentsService } from './payments.service';
 import { CreatePaymentIntentDto } from './dto/create-payment-intent.dto';
 import { ConfirmPaymentDto } from './dto/confirm-payment.dto';
 import { PaymentWebhookDto } from './dto/payment-webhook.dto';
+import { CreateFiscalInvoiceDto } from './dto/create-fiscal-invoice.dto';
 import { Roles } from '../auth/roles.decorator';
 import { Audit } from '../common/decorators/audit.decorator';
 import { Public } from '../auth/public.decorator';
@@ -62,5 +63,27 @@ export class PaymentsController {
   @ApiResponse({ status: 200, description: 'Notificación procesada' })
   handleWebhook(@Body() dto: PaymentWebhookDto) {
     return this.paymentsService.handleWebhook(dto);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Facturación Fiscal Boliviana (Normativa SIN / SIAT - Fase 7.7)
+  // ---------------------------------------------------------------------------
+
+  @Post('fiscal-invoice')
+  @Roles('ADMIN', 'DISPATCHER')
+  @Audit('CREATE', 'FiscalInvoice')
+  @ApiOperation({ summary: 'Emitir Factura Fiscal oficial boliviana con Código de Control v7 y QR SIN' })
+  @ApiResponse({ status: 201, description: 'Factura fiscal emitida exitosamente' })
+  issueFiscalInvoice(@Body() dto: CreateFiscalInvoiceDto) {
+    return this.paymentsService.issueFiscalInvoice(dto);
+  }
+
+  @Get('fiscal-invoice/:tripId')
+  @Roles('USER', 'DRIVER', 'DISPATCHER', 'ADMIN')
+  @ApiOperation({ summary: 'Obtener o reimprimir factura fiscal boliviana de un viaje' })
+  @ApiParam({ name: 'tripId', description: 'ID del viaje' })
+  @ApiResponse({ status: 200, description: 'Factura fiscal con código de control y QR' })
+  getFiscalInvoice(@Param('tripId', ParseIntPipe) tripId: number) {
+    return this.paymentsService.getFiscalInvoice(tripId);
   }
 }

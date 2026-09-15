@@ -12,6 +12,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@ne
 import { DriversService } from './drivers.service';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { UpdateDriverDto } from './dto/update-driver.dto';
+import { UpdateDriverLocationDto } from './dto/update-driver-location.dto';
 import { Roles } from '../auth/roles.decorator';
 import { Audit } from '../common/decorators/audit.decorator';
 
@@ -68,6 +69,20 @@ export class DriversController {
   @ApiResponse({ status: 409, description: 'No se puede eliminar porque tiene viajes asociados' })
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.driversService.remove(id);
+  }
+
+  @Post(':id/location')
+  @Roles('ADMIN', 'DISPATCHER', 'DRIVER')
+  @Audit('UPDATE', 'DriverLocation')
+  @ApiOperation({ summary: 'Actualizar posición GPS del conductor y sus vehículos asignados (REST)' })
+  @ApiParam({ name: 'id', description: 'ID del conductor' })
+  @ApiResponse({ status: 200, description: 'Ubicación actualizada correctamente' })
+  @ApiResponse({ status: 404, description: 'Conductor no encontrado' })
+  updateLocation(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: UpdateDriverLocationDto,
+  ) {
+    return this.driversService.updateLocation(id, body);
   }
 
   // ---------------------------------------------------------------------------

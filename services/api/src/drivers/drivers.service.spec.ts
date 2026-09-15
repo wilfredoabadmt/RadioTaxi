@@ -103,4 +103,33 @@ describe('DriversService (Documents & Bolivian Compliance TIC)', () => {
       expect(comp.status).toBe('valid');
     });
   });
+
+  describe('updateLocation (Fase 2.7)', () => {
+    it('debe actualizar coordenadas del conductor y sus vehículos', async () => {
+      mockPrisma.driver.findUnique.mockResolvedValue(mockDriver);
+      mockPrisma.$transaction = jest.fn().mockImplementation(async (callback) => {
+        return callback({
+          driver: {
+            update: jest.fn().mockResolvedValue({
+              ...mockDriver,
+              currentLat: -16.505,
+              currentLng: -68.145,
+            }),
+          },
+          vehicle: {
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          },
+        });
+      });
+
+      const result = await service.updateLocation(7, {
+        lat: -16.505,
+        lng: -68.145,
+        status: 'available',
+      });
+
+      expect(result.currentLat).toBe(-16.505);
+      expect(result.currentLng).toBe(-68.145);
+    });
+  });
 });

@@ -40,6 +40,33 @@ export default function Home() {
   const [aiSuggestions, setAiSuggestions] = useState<Record<number, any>>({});
   const [loadingAi, setLoadingAi] = useState<Record<number, boolean>>({});
 
+  // Estados de ruta activa y alertas (Fases 5.8 y 5.9)
+  const [selectedTripRequest, setSelectedTripRequest] = useState<any | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+
+  // Síntesis de campanilla de alerta sonora (Web Audio API)
+  const playAlertChime = () => {
+    if (!soundEnabled || typeof window === 'undefined') return;
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.exponentialRampToValueAtTime(880.0, ctx.currentTime + 0.12); // A5
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.35);
+    } catch {
+      // Ignorar restricciones de autoplay si no hubo interacción previa
+    }
+  };
+
   const fetchData = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) return;
@@ -146,7 +173,12 @@ export default function Home() {
       });
 
       socketInstance.on('trip-requests:update', (updatedRequests) => {
-        setTripRequests(updatedRequests);
+        setTripRequests((prev) => {
+          if (updatedRequests.length > prev.length) {
+            playAlertChime();
+          }
+          return updatedRequests;
+        });
       });
 
       socketInstance.on('trip:assigned', (data) => {
@@ -157,10 +189,17 @@ export default function Home() {
     return () => {
       socketInstance?.disconnect();
     };
-  }, []);
+  }, [soundEnabled]);
 
   const availableVehicles = vehicles.filter((v) => v.status === 'available');
   const busyVehicles = vehicles.filter((v) => v.status === 'busy');
+
+  // Detección de solicitudes con espera > 3 minutos (Fase 5.9)
+  const longWaitingRequests = tripRequests.filter((r) => {
+    if (!r.requestedAt) return false;
+    const elapsedMinutes = (Date.now() - new Date(r.requestedAt).getTime()) / (1000 * 60);
+    return elapsedMinutes >= 3;
+  });
 
   return (
     <AppLayout
@@ -180,7 +219,41 @@ export default function Home() {
               Monitoreo cartográfico en vivo y asignación asistida por IA para RadioTaxi Bolivia.
             </p>
           </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSoundEnabled((prev) => !prev)}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 shadow-sm ${
+                soundEnabled
+                  ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                  : 'bg-slate-800/80 text-slate-400 border-slate-700'
+              }`}
+            >
+              <span>{soundEnabled ? '🔊' : '🔇'}</span>
+              <span>{soundEnabled ? 'Alertas Sonoras Activas' : 'Silenciado'}</span>
+            </button>
+          </div>
         </div>
+
+        {/* Alerta Operativa: Solicitudes en espera prolongada (> 3 min) */}
+        {longWaitingRequests.length > 0 && (
+          <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/50 text-amber-200 text-xs flex items-center justify-between shadow-lg shadow-amber-950/20">
+            <div className="flex items-center gap-2.5">
+              <span className="text-xl">⚠️</span>
+              <div>
+                <strong className="text-amber-100 font-bold block">Alerta de Despacho (Fase 5.9):</strong>
+                <span className="text-amber-200/90 text-[11px]">
+                  {longWaitingRequests.length} solicitud(es) superan los 3 minutos de espera sin móvil asignado: (
+                  {longWaitingRequests.map((r) => `#${r.id}`).join(', ')}).
+                </span>
+              </div>
+            </div>
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
+              URGENTE
+            </span>
+          </div>
+        )}
 
         {/* Tarjetas KPI de Estado */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -231,9 +304,17 @@ export default function Home() {
             <div className="h-[460px] w-full rounded-xl overflow-hidden border border-slate-800">
               <DispatchMapClient
                 vehicles={vehicles}
+                tripRequests={tripRequests}
+                selectedTripRequest={selectedTripRequest}
+                selectedVehicleId={selectedTripRequest ? selectedVehicles[selectedTripRequest.id] : null}
                 centerLat={-16.5}
                 centerLng={-68.15}
                 zoom={13}
+                onSelectVehicle={(vehId) => {
+                  if (selectedTripRequest) {
+                    setSelectedVehicles((prev) => ({ ...prev, [selectedTripRequest.id]: vehId }));
+                  }
+                }}
               />
             </div>
           </div>
@@ -263,17 +344,34 @@ export default function Home() {
                   const suggestion = aiSuggestions[request.id];
                   const isAiLoading = loadingAi[request.id];
                   const selectedVehicleId = selectedVehicles[request.id] || '';
+                  const isSelected = selectedTripRequest?.id === request.id;
 
                   return (
                     <div
                       key={request.id}
-                      className="p-4 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-3 hover:border-slate-700 transition"
+                      onClick={() =>
+                        setSelectedTripRequest((prev: any) =>
+                          prev?.id === request.id ? null : request
+                        )
+                      }
+                      className={`p-4 rounded-xl bg-slate-950/70 border space-y-3 transition cursor-pointer ${
+                        isSelected
+                          ? 'border-cyan-500 ring-1 ring-cyan-500/40 shadow-lg shadow-cyan-950/50'
+                          : 'border-slate-800/80 hover:border-slate-700'
+                      }`}
                     >
                       {/* Cabecera del pedido */}
                       <div className="flex items-center justify-between">
-                        <span className="font-mono text-xs font-bold text-cyan-400">
-                          #{request.id} • {request.passengerName || 'Pasajero'}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-xs font-bold text-cyan-400">
+                            #{request.id} • {request.passengerName || 'Pasajero'}
+                          </span>
+                          {isSelected && (
+                            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                              RUTA EN MAPA
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30">
                           PENDIENTE
                         </span>

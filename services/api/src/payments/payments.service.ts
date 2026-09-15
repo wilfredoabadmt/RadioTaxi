@@ -3,6 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreatePaymentIntentDto } from './dto/create-payment-intent.dto';
 import { ConfirmPaymentDto } from './dto/confirm-payment.dto';
 import { PaymentWebhookDto } from './dto/payment-webhook.dto';
+import { CreateFiscalInvoiceDto } from './dto/create-fiscal-invoice.dto';
+import { generateBolivianControlCode, generateSinQrPayload } from './fiscal-invoice.util';
 
 @Injectable()
 export class PaymentsService {
@@ -260,5 +262,128 @@ export class PaymentsService {
       tripId: dto.tripId,
       transactionId: dto.transactionId,
     };
+  }
+
+  /**
+   * Emite una Factura Fiscal oficial conforme a la normativa del SIN Bolivia (Fase 7.7).
+   */
+  async issueFiscalInvoice(dto: CreateFiscalInvoiceDto) {
+    const trip = await this.getTripWithDetails(dto.tripId);
+
+    const amount = Number(trip.fareTotal || (trip.fares[0]?.totalFare ?? 25.0));
+    const company = trip.tripRequest.company;
+    const nitEmisor = company?.nit || '348921028';
+    const companyName = company?.name || 'RadioTaxi Bolivia S.R.L.';
+    const companyAddress = company?.address || 'Av. Mariscal Santa Cruz #1204, Edif. La Primera, La Paz - Bolivia';
+    const phone = company?.phone || '(+591) 2 2408900';
+
+    const invoiceNumber = String(1000 + trip.id);
+    const authNumber = '29040011007';
+    const now = new Date();
+    const dateFormatted = now.toISOString().slice(0, 10).replace(/-/g, '');
+    const dateStr = now.toISOString().slice(0, 10);
+    const totalAmountRounded = Math.round(amount).toString();
+
+    const controlCode = generateBolivianControlCode(
+      authNumber,
+      invoiceNumber,
+      dto.clientNit,
+      dateFormatted,
+      totalAmountRounded
+    );
+
+    const baseCreditoFiscal = amount;
+    const taxCredit = Number((amount * 0.13).toFixed(2)); // IVA 13%
+
+    const qrSinPayload = generateSinQrPayload({
+      nitEmisor,
+      invoiceNumber,
+      authNumber,
+      dateStr,
+      total: amount,
+      baseCreditoFiscal,
+      controlCode,
+      clientNit: dto.clientNit,
+    });
+
+    const fiscalInvoice = {
+      invoiceNumber,
+      authorizationNumber: authNumber,
+      controlCode,
+      issuedAt: now.toISOString(),
+      limitEmissionDate: '2026-12-31',
+      activityDescription: 'SERVICIO DE TRANSPORTE TERRESTRE DE PASAJEROS EN RADIO TAXI',
+      legend:
+        'ESTA FACTURA CONTRIBUYE AL DESARROLLO DEL PAÍS, EL USO ILÍCITO SERÁ SANCIONADO PENALMENTE DE ACUERDO A LEY - Ley N° 453: Los servicios deben prestarse en condiciones de inocuidad, calidad y seguridad.',
+      issuer: {
+        nit: nitEmisor,
+        name: companyName,
+        address: companyAddress,
+        phone,
+        city: 'La Paz - Bolivia',
+      },
+      client: {
+        nit: dto.clientNit,
+        businessName: dto.clientBusinessName.toUpperCase(),
+        email: dto.clientEmail || 'N/A',
+      },
+      tripDetails: {
+        tripId: trip.id,
+        origin: trip.tripRequest.originAddress || 'Origen Coordenadas GPS',
+        destination: trip.tripRequest.destinationAddress || 'Destino Carrera',
+        vehiclePlate: trip.vehicle?.plate || 'Flota',
+        driverName: trip.driver?.user?.name || 'Conductor Certificado',
+        paymentMethod: dto.paymentMethod || trip.paymentMethod || 'cash',
+      },
+      financialBreakdown: {
+        subtotal: amount,
+        discounts: 0.0,
+        total: amount,
+        baseTaxCredit: baseCreditoFiscal,
+        ivaTaxCredit: taxCredit, // 13%
+        currency: 'BOB',
+      },
+      qrSinPayload,
+    };
+
+    // Registrar en auditoría la emisión formal de la factura fiscal
+    await this.prisma.auditLog.create({
+      data: {
+        companyId: trip.tripRequest.companyId,
+        entityType: 'Trip',
+        entityId: trip.id,
+        action: 'FISCAL_INVOICE_ISSUED',
+        data: fiscalInvoice as any,
+      },
+    });
+
+    return fiscalInvoice;
+  }
+
+  /**
+   * Obtiene la factura fiscal emitida para un viaje.
+   */
+  async getFiscalInvoice(tripId: number) {
+    const existingLog = await this.prisma.auditLog.findFirst({
+      where: {
+        entityType: 'Trip',
+        entityId: tripId,
+        action: 'FISCAL_INVOICE_ISSUED',
+      },
+      orderBy: { id: 'desc' },
+    });
+
+    if (existingLog && existingLog.data) {
+      return existingLog.data;
+    }
+
+    const trip = await this.getTripWithDetails(tripId);
+    // Si no ha sido emitida formalmente, emitir una por defecto
+    return this.issueFiscalInvoice({
+      tripId,
+      clientNit: '0',
+      clientBusinessName: trip.tripRequest.customer?.name || 'CONSUMIDOR FINAL',
+      paymentMethod: trip.paymentMethod || 'cash',
+    });
   }
 }

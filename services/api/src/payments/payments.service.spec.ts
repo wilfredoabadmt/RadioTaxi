@@ -180,4 +180,48 @@ describe('PaymentsService (SDD Payment & Receipt Management)', () => {
       expect(response.action).toBe('PAYMENT_SETTLED');
     });
   });
+
+  describe('issueFiscalInvoice (Fase 7.7 - SIN Bolivia)', () => {
+    it('debe emitir factura fiscal con Código de Control v7 y QR tributario SIN', async () => {
+      mockPrisma.trip.findUnique.mockResolvedValue(mockTripData);
+      mockPrisma.auditLog.create.mockResolvedValue({ id: 99 });
+
+      const invoice = await service.issueFiscalInvoice({
+        tripId: 42,
+        clientNit: '1028372023',
+        clientBusinessName: 'BANCO SOL S.A.',
+        clientEmail: 'facturacion@bancosol.com.bo',
+      });
+
+      expect(invoice.invoiceNumber).toBe('1042');
+      expect(invoice.authorizationNumber).toBe('29040011007');
+      expect(invoice.controlCode).toBeDefined();
+      expect(invoice.controlCode.split('-').length).toBeGreaterThanOrEqual(4);
+      expect(invoice.financialBreakdown.total).toBe(35.0);
+      expect(invoice.financialBreakdown.ivaTaxCredit).toBe(4.55); // 13% de 35.0
+      expect(invoice.client.nit).toBe('1028372023');
+      expect(invoice.client.businessName).toBe('BANCO SOL S.A.');
+      expect(invoice.qrSinPayload).toContain('1029384756|1042|29040011007');
+      expect(mockPrisma.auditLog.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('getFiscalInvoice', () => {
+    it('debe recuperar factura fiscal previamente auditada', async () => {
+      mockPrisma.auditLog.findFirst = jest.fn().mockResolvedValue({
+        id: 99,
+        action: 'FISCAL_INVOICE_ISSUED',
+        data: {
+          invoiceNumber: '1042',
+          authorizationNumber: '29040011007',
+          controlCode: 'A1-B2-C3-D4-E5',
+          financialBreakdown: { total: 35.0 },
+        },
+      });
+
+      const invoice = await service.getFiscalInvoice(42);
+      expect(invoice.invoiceNumber).toBe('1042');
+      expect(invoice.controlCode).toBe('A1-B2-C3-D4-E5');
+    });
+  });
 });

@@ -125,6 +125,37 @@ export class DriversService {
     });
   }
 
+  /**
+   * Actualiza la posición GPS del conductor y sus vehículos asociados (Fase 2.7).
+   */
+  async updateLocation(id: number, data: { lat: number; lng: number; status?: string }) {
+    await this.findOne(id); // 404 si no existe
+
+    return this.prisma.$transaction(async (tx: any) => {
+      const updatedDriver = await tx.driver.update({
+        where: { id },
+        data: {
+          currentLat: data.lat,
+          currentLng: data.lng,
+          ...(data.status ? { status: data.status } : {}),
+        },
+        include: { user: true, vehicle: true },
+      });
+
+      // Sincronizar posición con los vehículos asignados al conductor
+      await tx.vehicle.updateMany({
+        where: { driverId: id },
+        data: {
+          currentLat: data.lat,
+          currentLng: data.lng,
+          ...(data.status ? { status: data.status } : {}),
+        },
+      });
+
+      return updatedDriver;
+    });
+  }
+
   // ===========================================================================
   // Gestión de Documentación de Choferes (DriverDocument)
   // ===========================================================================
