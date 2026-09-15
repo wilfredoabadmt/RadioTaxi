@@ -172,5 +172,44 @@ describe('PricingService (SDD Fare Calculation Contract)', () => {
         })
       ).rejects.toThrow(NotFoundException);
     });
+
+    it('debe aplicar peakMultiplier en horario pico y omitirlo en horario valle (Fase 6.4)', async () => {
+      mockPrisma.pricingRule.findUnique.mockResolvedValue({
+        id: 1,
+        companyId: 10,
+        baseFare: 10,
+        kmRate: 2,
+        minuteRate: 0,
+        minFare: 10,
+        peakMultiplier: 1.5,
+      });
+      mockPrisma.geofence.findMany.mockResolvedValue([]);
+
+      // 1. Horario pico laboral (Martes 08:30 AM local)
+      // Base 10 + 5km * 2 = 20 -> Con 1.5 = 30.00
+      const peakTuesday = new Date(2026, 8, 15, 8, 30, 0); // Martes 08:30
+      const peakResult = await service.calculateFare({
+        ruleId: 1,
+        distanceKm: 5,
+        durationMinutes: 10,
+        scheduledAt: peakTuesday.toISOString(),
+      });
+      expect(peakResult.isPeakHour).toBe(true);
+      expect(peakResult.peakMultiplier).toBe(1.5);
+      expect(peakResult.total).toBe(30);
+
+      // 2. Horario valle laboral (Martes 14:00 PM local)
+      // Base 10 + 5km * 2 = 20 -> Con 1.0 = 20.00
+      const offPeakTuesday = new Date(2026, 8, 15, 14, 0, 0); // Martes 14:00
+      const offPeakResult = await service.calculateFare({
+        ruleId: 1,
+        distanceKm: 5,
+        durationMinutes: 10,
+        scheduledAt: offPeakTuesday.toISOString(),
+      });
+      expect(offPeakResult.isPeakHour).toBe(false);
+      expect(offPeakResult.peakMultiplier).toBe(1.0);
+      expect(offPeakResult.total).toBe(20);
+    });
   });
 });

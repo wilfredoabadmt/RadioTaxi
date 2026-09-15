@@ -150,6 +150,38 @@ export class PricingService {
     return surcharge;
   }
 
+  /**
+   * Determina si una fecha/hora corresponde a franjas horarias pico en Bolivia:
+   * - Horas pico laborales: 07:00 a 09:30 y 18:00 a 20:30 (Lunes a Viernes)
+   * - Turno nocturno de fin de semana: Viernes a Domingo 23:00 a 05:00
+   */
+  isPeakHour(date: Date = new Date()): { isPeak: boolean; reason?: string } {
+    const day = date.getDay(); // 0 = Domingo, 1 = Lunes, ... 6 = Sábado
+    const hour = date.getHours();
+    const minute = date.getMinutes();
+    const timeVal = hour + minute / 60;
+
+    // Horas pico laborales
+    const isWeekday = day >= 1 && day <= 5;
+    if (isWeekday) {
+      if (timeVal >= 7.0 && timeVal <= 9.5) {
+        return { isPeak: true, reason: 'Hora pico matutina laboral (07:00 - 09:30)' };
+      }
+      if (timeVal >= 18.0 && timeVal <= 20.5) {
+        return { isPeak: true, reason: 'Hora pico vespertina laboral (18:00 - 20:30)' };
+      }
+    }
+
+    // Turno nocturno de fin de semana
+    if (day === 5 || day === 6 || day === 0) {
+      if (timeVal >= 23.0 || timeVal <= 5.0) {
+        return { isPeak: true, reason: 'Tarifa nocturna de fin de semana (23:00 - 05:00)' };
+      }
+    }
+
+    return { isPeak: false };
+  }
+
   async calculateFare(data: CalculateFareDto) {
     const rule = await this.prisma.pricingRule.findUnique({
       where: { id: data.ruleId }
@@ -177,7 +209,23 @@ export class PricingService {
     const distanceCost = data.distanceKm * Number(rule.kmRate || 0);
     const timeCost = data.durationMinutes * Number(rule.minuteRate || 0);
     const tollSurcharge = Number(rule.tollSurcharge || 0);
-    const peakMultiplier = Number(rule.peakMultiplier || 1);
+
+    // Multiplicador pico consciente del horario programado
+    let peakMultiplier = Number(rule.peakMultiplier || 1);
+    let isPeak = false;
+    let peakReason: string | undefined;
+
+    if (data.scheduledAt) {
+      const checkDate = new Date(data.scheduledAt);
+      const peakInfo = this.isPeakHour(checkDate);
+      isPeak = peakInfo.isPeak;
+      peakReason = peakInfo.reason;
+      peakMultiplier = isPeak ? Number(rule.peakMultiplier || 1) : 1.0;
+    } else {
+      const currentPeakInfo = this.isPeakHour(new Date());
+      isPeak = currentPeakInfo.isPeak;
+      peakReason = currentPeakInfo.reason;
+    }
 
     const fare = Math.max(
       base + distanceCost + timeCost + geofenceSurcharge + tollSurcharge,
@@ -194,6 +242,8 @@ export class PricingService {
       geofenceSurcharge,
       tollSurcharge,
       peakMultiplier,
+      isPeakHour: isPeak,
+      peakReason,
       total
     };
   }

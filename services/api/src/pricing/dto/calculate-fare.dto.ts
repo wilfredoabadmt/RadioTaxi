@@ -31,4 +31,8 @@ export class CalculateFareDto {
   @IsOptional()
   @IsNumber()
   destinationLng?: number;
+
+  @IsOptional()
+  scheduledAt?: string;
 }
+
