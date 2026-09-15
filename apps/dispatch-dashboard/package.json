@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 3001",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "node ../../services/api/node_modules/jest/bin/jest.js"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

@@ -7,6 +7,8 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  Modal,
+  Linking,
 } from 'react-native';
 import * as Location from 'expo-location';
 import { useAuth } from '../auth-context';
@@ -15,6 +17,15 @@ import { fetchTrip, markTripArrived, startTrip, fetchAssignedVehicle } from '../
 import { TripDetail, TripAssignment, TripCompletedEvent } from '../types';
 
 const GPS_INTERVAL_MS = 5000;
+
+interface TripOfferData {
+  offerId: string;
+  tripRequestId: number;
+  originAddress?: string | null;
+  destinationAddress?: string | null;
+  timeoutSeconds: number;
+  offeredAt: string;
+}
 
 export default function TripScreen() {
   const { user, token, logout } = useAuth();
@@ -26,6 +37,11 @@ export default function TripScreen() {
   const [loadingTrip, setLoadingTrip] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
   const [lastFare, setLastFare] = useState<TripCompletedEvent | null>(null);
+
+  // Oferta entrante y temporizador (Fase 4.4)
+  const [activeOffer, setActiveOffer] = useState<TripOfferData | null>(null);
+  const [offerSeconds, setOfferSeconds] = useState(15);
+
 
   const gpsTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -100,16 +116,80 @@ export default function TripScreen() {
       }
     }
 
+    function onTripOffered(offer: TripOfferData) {
+      console.log('[driver-app] Oferta de viaje recibida:', offer);
+      setActiveOffer(offer);
+      setOfferSeconds(offer.timeoutSeconds || 15);
+    }
+
     socket.on('trip:assigned', onTripAssigned);
     socket.on('trip:completed', onTripCompleted);
     socket.on('trip:status_changed', onTripStatusChanged);
+    socket.on('trip:offered', onTripOffered);
 
     return () => {
       socket.off('trip:assigned', onTripAssigned);
       socket.off('trip:completed', onTripCompleted);
       socket.off('trip:status_changed', onTripStatusChanged);
+      socket.off('trip:offered', onTripOffered);
     };
   }, [socket, token, activeTrip]);
+
+  // Temporizador para rechazo automático de oferta tras expiración (Fase 4.4)
+  useEffect(() => {
+    if (!activeOffer) return;
+    if (offerSeconds <= 0) {
+      socket.emit('trip:reject', {
+        tripRequestId: activeOffer.tripRequestId,
+        reason: 'timeout',
+      });
+      setActiveOffer(null);
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setOfferSeconds((prev) => prev - 1);
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [activeOffer, offerSeconds, socket]);
+
+  function handleAcceptOffer() {
+    if (!activeOffer) return;
+    const vehicleId = activeTrip?.vehicle?.id ?? assignedVehicle?.id;
+    if (!vehicleId) {
+      Alert.alert('Error', 'No tienes un vehículo asignado para aceptar el viaje.');
+      return;
+    }
+    socket.emit('trip:accept', {
+      tripRequestId: activeOffer.tripRequestId,
+      vehicleId,
+    });
+    setActiveOffer(null);
+  }
+
+  function handleRejectOffer() {
+    if (!activeOffer) return;
+    socket.emit('trip:reject', {
+      tripRequestId: activeOffer.tripRequestId,
+      reason: 'rejected_by_driver',
+    });
+    setActiveOffer(null);
+  }
+
+  function handleOpenNavigation() {
+    if (!activeTrip) return;
+    const isPickup = activeTrip.status === 'ASSIGNED';
+    const lat = isPickup ? activeTrip.tripRequest.originLat : activeTrip.tripRequest.destinationLat;
+    const lng = isPickup ? activeTrip.tripRequest.originLng : activeTrip.tripRequest.destinationLng;
+
+    if (lat && lng) {
+      Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`);
+    } else {
+      Alert.alert('Navegación GPS', 'Coordenadas del punto no disponibles.');
+    }
+  }
+
 
   // -------------------------------------------------------------------------
   // Envío periódico de posición GPS (CORREGIDO: emite siempre, aun libre)
@@ -338,7 +418,16 @@ export default function TripScreen() {
                 {transitioning ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionBtnText}>🏁 Finalizar y liquidar viaje</Text>}
               </TouchableOpacity>
             )}
+
+            {/* Navegación GPS hacia el punto de recogida o destino (Fase 4.6) */}
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.navBtn]}
+              onPress={handleOpenNavigation}
+            >
+              <Text style={styles.actionBtnText}>🗺️ Navegar con Google Maps</Text>
+            </TouchableOpacity>
           </View>
+
         ) : (
           !loadingTrip && !lastFare ? (
             <View style={styles.center}>
@@ -351,9 +440,55 @@ export default function TripScreen() {
           ) : null
         )}
       </ScrollView>
+
+      {/* Modal interactivo de Oferta de Viaje con Temporizador (Fase 4.4) */}
+      <Modal visible={!!activeOffer} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.offerCard}>
+            <View style={styles.offerHeader}>
+              <Text style={styles.offerTitle}>🔔 Solicitud de Viaje</Text>
+              <View style={styles.timerBadge}>
+                <Text style={styles.timerText}>⏳ {offerSeconds}s</Text>
+              </View>
+            </View>
+
+            <View style={styles.tripPoint}>
+              <Text style={styles.pointDot}>📍</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.pointLabel}>Recogida</Text>
+                <Text style={styles.pointText}>{activeOffer?.originAddress || 'N/D'}</Text>
+              </View>
+            </View>
+
+            <View style={styles.tripPoint}>
+              <Text style={styles.pointDot}>🏁</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.pointLabel}>Destino</Text>
+                <Text style={styles.pointText}>{activeOffer?.destinationAddress || 'N/D'}</Text>
+              </View>
+            </View>
+
+            <View style={styles.offerActions}>
+              <TouchableOpacity
+                style={[styles.offerBtn, styles.rejectOfferBtn]}
+                onPress={handleRejectOffer}
+              >
+                <Text style={styles.offerBtnText}>✕ Rechazar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.offerBtn, styles.acceptOfferBtn]}
+                onPress={handleAcceptOffer}
+              >
+                <Text style={styles.offerBtnText}>✓ Aceptar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f1f5f9' },
@@ -437,4 +572,65 @@ const styles = StyleSheet.create({
   fareAmount: { color: '#064e3b', fontSize: 32, fontWeight: 'bold', marginVertical: 8 },
   fareBreakdown: { marginTop: 8 },
   fareLine: { color: '#047857', fontSize: 13, marginBottom: 2 },
+  navBtn: { backgroundColor: '#334155' },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-end',
+  },
+  offerCard: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  offerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  offerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#0f172a',
+  },
+  timerBadge: {
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  timerText: {
+    color: '#b45309',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  offerActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 20,
+  },
+  offerBtn: {
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  rejectOfferBtn: {
+    backgroundColor: '#f1f5f9',
+  },
+  acceptOfferBtn: {
+    backgroundColor: '#22c55e',
+  },
+  offerBtnText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#0f172a',
+  },
 });
+
