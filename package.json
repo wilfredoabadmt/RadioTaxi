@@ -13,7 +13,10 @@
     "dev:all": "npm run dev --workspaces",
     "build": "npm run build --workspaces",
     "lint": "npm run lint --workspaces",
+    "format": "npx prettier --write .",
+    "format:check": "npx prettier --check .",
     "start": "npm run start --workspaces"
+
   },
   "devDependencies": {
     "@types/express": "^5.0.6"

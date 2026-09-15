@@ -124,9 +124,10 @@ export class AuthService {
           password: hashedPassword,
           name: dto.name,
           phone: dto.phone,
-          role: VALID_ROLES.includes(dto.role as any) ? dto.role! : 'USER',
+          role: (VALID_ROLES.includes(dto.role as any) ? dto.role! : 'USER') as any,
           companyId: dto.companyId
         }
+
       });
 
       const payload: JwtPayload = {

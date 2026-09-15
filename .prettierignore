@@ -1,0 +1,10 @@
+node_modules
+dist
+.next
+build
+coverage
+.expo
+.system_generated
+*.min.js
+*.min.css
+package-lock.json

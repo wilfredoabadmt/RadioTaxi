@@ -60,9 +60,10 @@ describe('CorporateReportsService (Excel Generation)', () => {
 
     expect(report.id).toBe(1);
     expect(report.reportType).toBe('CONSOLIDATED_EXCEL');
-    expect(report.data.totalTrips).toBe(1);
-    expect(report.data.totalRevenue).toBe(45.0);
-    expect(report.data.excelBase64).toBeDefined();
-    expect(typeof report.data.excelBase64).toBe('string');
+    expect((report.data as any).totalTrips).toBe(1);
+    expect((report.data as any).totalRevenue).toBe(45.0);
+    expect((report.data as any).excelBase64).toBeDefined();
+    expect(typeof (report.data as any).excelBase64).toBe('string');
   });
 });
+

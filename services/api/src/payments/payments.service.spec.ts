@@ -219,9 +219,10 @@ describe('PaymentsService (SDD Payment & Receipt Management)', () => {
         },
       });
 
-      const invoice = await service.getFiscalInvoice(42);
+      const invoice: any = await service.getFiscalInvoice(42);
       expect(invoice.invoiceNumber).toBe('1042');
       expect(invoice.controlCode).toBe('A1-B2-C3-D4-E5');
     });
+
   });
 });

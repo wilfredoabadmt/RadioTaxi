@@ -43,7 +43,7 @@ export class VehiclesService {
     }
 
     return this.prisma.vehicle.create({
-      data,
+      data: data as any,
       include: { driver: true }
     });
   }
@@ -62,9 +62,10 @@ export class VehiclesService {
 
     return this.prisma.vehicle.update({
       where: { id },
-      data,
+      data: data as any,
       include: { driver: true }
     });
+
   }
 
   async remove(id: number) {

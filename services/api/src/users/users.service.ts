@@ -50,9 +50,10 @@ export class UsersService {
         password: hashedPassword,
         name: data.name,
         phone: data.phone,
-        role: data.role ?? 'USER',
+        role: (data.role ?? 'USER') as any,
         companyId: data.companyId,
       },
+
       select: this.publicSelect,
     });
   }

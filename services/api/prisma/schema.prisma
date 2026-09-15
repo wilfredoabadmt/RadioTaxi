@@ -19,8 +19,54 @@ datasource db {
 }
 
 // ---------------------------------------------------------------------------
+// Enums Nativos de PostgreSQL
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  USER
+  DRIVER
+  DISPATCHER
+  ADMIN
+}
+
+enum DriverStatus {
+  available
+  busy
+  offline
+}
+
+enum VehicleStatus {
+  available
+  busy
+  offline
+}
+
+enum TripRequestStatus {
+  PENDING
+  ACCEPTED
+  COMPLETED
+  CANCELLED
+}
+
+enum TripStatus {
+  ASSIGNED
+  ARRIVED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  cash
+  card
+  qr_bolivia
+  corporate_account
+}
+
+// ---------------------------------------------------------------------------
 // Empresa / Organización
 // ---------------------------------------------------------------------------
+
 
 model Company {
   id               Int      @id @default(autoincrement())
@@ -29,8 +75,10 @@ model Company {
   nit              String?
   commerceRegistry String?
   address          String?
+  phone            String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+
 
   users             User[]
   costCenters       CostCenter[]
@@ -55,7 +103,7 @@ model User {
   email     String   @unique
   password  String
   name      String?
-  role      String   @default("USER") // USER | DRIVER | DISPATCHER | ADMIN
+  role      UserRole @default(USER)
   phone     String?
   status    String   @default("active")
   companyId Int?
@@ -71,16 +119,16 @@ model User {
 }
 
 model Driver {
-  id              Int       @id @default(autoincrement())
-  userId          Int       @unique
-  user            User      @relation(fields: [userId], references: [id])
+  id              Int          @id @default(autoincrement())
+  userId          Int          @unique
+  user            User         @relation(fields: [userId], references: [id])
   licenseNumber   String?
   licenseExpiry   DateTime?
-  status          String    @default("available") // available | busy | offline
+  status          DriverStatus @default(available)
   experienceYears Int?
   currentLat      Float?
   currentLng      Float?
-  createdAt       DateTime  @default(now())
+  createdAt       DateTime     @default(now())
 
   vehicle           Vehicle[]
   trips             Trip[]
@@ -105,22 +153,22 @@ model DriverDocument {
 }
 
 model Vehicle {
-  id          Int      @id @default(autoincrement())
-  plate       String   @unique
+  id          Int           @id @default(autoincrement())
+  plate       String        @unique
   driverId    Int?
-  driver      Driver?  @relation(fields: [driverId], references: [id])
+  driver      Driver?       @relation(fields: [driverId], references: [id])
   companyId   Int?
-  company     Company? @relation(fields: [companyId], references: [id])
+  company     Company?      @relation(fields: [companyId], references: [id])
   brand       String?
   model       String?
   year        Int?
   vehicleType String? // 'sedan' | 'suv' | 'van' | ...
   color       String?
-  status      String   @default("available") // available | busy | offline
+  status      VehicleStatus @default(available)
   gpsDeviceId String?
   currentLat  Float?
   currentLng  Float?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime      @default(now())
 
   trips Trip[]
 
@@ -157,7 +205,7 @@ model TripRequest {
   acceptedAt  DateTime?
   completedAt DateTime?
 
-  status String @default("PENDING") // PENDING | ACCEPTED | COMPLETED | CANCELLED
+  status TripRequestStatus @default(PENDING)
 
   trip                 Trip?
   corporateReservation CorporateReservation?
@@ -181,13 +229,13 @@ model Trip {
   vehicle   Vehicle @relation(fields: [vehicleId], references: [id])
 
   // Tarifa
-  fareTotal      Float   @default(0)
-  fareBase       Float   @default(0)
-  fareDistance   Float   @default(0)
-  fareTime       Float   @default(0)
-  fareSurcharges Float   @default(0)
-  discount       Float   @default(0)
-  paymentMethod  String? // 'cash' | 'card' | 'corporate_account'
+  fareTotal      Float          @default(0)
+  fareBase       Float          @default(0)
+  fareDistance   Float          @default(0)
+  fareTime       Float          @default(0)
+  fareSurcharges Float          @default(0)
+  discount       Float          @default(0)
+  paymentMethod  PaymentMethod?
 
   // Medición
   distanceMeters  Int?
@@ -196,7 +244,7 @@ model Trip {
   startedAt DateTime  @default(now())
   endedAt   DateTime?
 
-  status String @default("ASSIGNED") // ASSIGNED | IN_PROGRESS | COMPLETED | CANCELLED
+  status TripStatus @default(ASSIGNED)
 
   fares    TripFare[]
   segments TripSegment[]
@@ -205,6 +253,7 @@ model Trip {
   @@index([vehicleId])
   @@index([status])
 }
+
 
 model TripSegment {
   id                    Int    @id @default(autoincrement())
@@ -288,18 +337,21 @@ model TripFare {
 // ---------------------------------------------------------------------------
 
 model CostCenter {
-  id           Int      @id @default(autoincrement())
-  companyId    Int
-  company      Company  @relation(fields: [companyId], references: [id])
-  code         String
-  name         String
-  description  String?
-  budgetCenter String?
-  createdAt    DateTime @default(now())
+  id                 Int               @id @default(autoincrement())
+  companyId          Int
+  company            Company           @relation(fields: [companyId], references: [id])
+  corporateAccountId Int?
+  corporateAccount   CorporateAccount? @relation(fields: [corporateAccountId], references: [id])
+  code               String
+  name               String
+  description        String?
+  budgetCenter       String?
+  createdAt          DateTime          @default(now())
 
   corporateReservations CorporateReservation[]
 
   @@index([companyId])
+  @@index([corporateAccountId])
 }
 
 model CorporateAccount {
@@ -313,10 +365,12 @@ model CorporateAccount {
   creditLimit       Float    @default(0)
   createdAt         DateTime @default(now())
 
+  costCenters           CostCenter[]
   corporateReservations CorporateReservation[]
 
   @@index([companyId])
 }
+
 
 model CorporateReservation {
   id                 Int              @id @default(autoincrement())

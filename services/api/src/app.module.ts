@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { validateEnvironment } from './config/env.validation';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { AiModule } from './ai/ai.module';
@@ -24,7 +25,11 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validate: validateEnvironment,
+    }),
+
     ThrottlerModule.forRoot([{
       ttl: 60000,
       limit: 100
