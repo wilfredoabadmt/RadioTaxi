@@ -196,6 +196,43 @@ export class PricingService {
     // Obtenemos las geocercas
     const geofences = await this.prisma.geofence.findMany({ where: { companyId } });
     
+    // Intentar consultar al microservicio pricing-engine (Fase 6.1 / 6.2)
+    const PRICING_ENGINE_URL = process.env.PRICING_ENGINE_URL || 'http://localhost:3005';
+    try {
+      const res = await fetch(`${PRICING_ENGINE_URL}/price`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rule,
+          geofences,
+          distanceKm: data.distanceKm,
+          durationMinutes: data.durationMinutes,
+          originLat: data.originLat,
+          originLng: data.originLng,
+          destinationLat: data.destinationLat,
+          destinationLng: data.destinationLng,
+          scheduledAt: data.scheduledAt,
+        }),
+      });
+      if (res.ok) {
+        const breakdown: any = await res.json();
+        return {
+          ruleId: rule.id,
+          baseFare: breakdown.baseFare,
+          distanceCost: breakdown.distanceFare,
+          timeCost: breakdown.timeFare,
+          geofenceSurcharge: breakdown.geofenceSurcharge,
+          tollSurcharge: breakdown.tollSurcharge,
+          peakMultiplier: breakdown.peakMultiplier,
+          isPeakHour: breakdown.isPeakHour ?? false,
+          peakReason: breakdown.peakReason,
+          total: breakdown.totalFare,
+        };
+      }
+    } catch {
+      // Fallback a motor de cálculo local
+    }
+
     // Pasamos las geocercas usando 'as any' para saltar la validación de tipos rebelde
     const geofenceSurcharge = this.getGeofenceSurcharge(
       geofences as any,

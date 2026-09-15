@@ -66,15 +66,11 @@ function getGeofenceSurcharge(
 }
 
 /**
- * Calcula la tarifa de un viaje dado:
- * - company: para obtener la regla activa y geofences
- * - distanceKm / durationMinutes: métricas del viaje
- * - coords: para evaluar geofences
- *
- * Devuelve el desglose completo + total.
+ * Calcula la tarifa consumiendo el microservicio pricing-engine (Fase 6.1/6.2)
+ * con fallback local resiliente.
  */
 export async function calculateFare(params: {
-  companyId: number;
+  companyId?: number;
   distanceKm: number;
   durationMinutes: number;
   originLat?: number;
@@ -85,7 +81,6 @@ export async function calculateFare(params: {
   const rule = await findActiveRule(params.companyId);
 
   if (!rule) {
-    // Sin regla → tarifa 0 (se puede mejorar con un default)
     return {
       ruleId: 0,
       baseFare: 0,
@@ -98,11 +93,45 @@ export async function calculateFare(params: {
     };
   }
 
-  // Obtener geofences de la empresa
   const prisma2 = getPrisma();
   const geofences = await prisma2.geofence.findMany({
     where: { companyId: params.companyId },
   });
+
+  // Consumir el microservicio pricing-engine
+  const PRICING_ENGINE_URL = process.env.PRICING_ENGINE_URL || 'http://localhost:3005';
+  try {
+    const res = await fetch(`${PRICING_ENGINE_URL}/price`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rule,
+        geofences,
+        distanceKm: params.distanceKm,
+        durationMinutes: params.durationMinutes,
+        originLat: params.originLat,
+        originLng: params.originLng,
+        destinationLat: params.destinationLat,
+        destinationLng: params.destinationLng,
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        ruleId: rule.id,
+        baseFare: data.baseFare,
+        distanceCost: data.distanceFare,
+        timeCost: data.timeFare,
+        geofenceSurcharge: data.geofenceSurcharge,
+        tollSurcharge: data.tollSurcharge,
+        peakMultiplier: data.peakMultiplier,
+        total: data.totalFare,
+      };
+    }
+  } catch {
+    // Fallback local
+  }
 
   const geofenceSurcharge =
     params.originLat != null && params.originLng != null &&
