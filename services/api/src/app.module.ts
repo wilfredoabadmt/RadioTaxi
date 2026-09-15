@@ -17,6 +17,7 @@ import { TripFaresModule } from './trip-fares/trip-fares.module';
 import { CorporateReportsModule } from './corporate-reports/corporate-reports.module';
 import { DriversModule } from './drivers/drivers.module';
 import { PaymentsModule } from './payments/payments.module';
+import { CorporateModule } from './corporate/corporate.module';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 
 @Module({
@@ -39,6 +40,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     CorporateReportsModule,
     DriversModule,
     PaymentsModule,
+    CorporateModule,
   ],
   // Guards y Filtros globales: Rate-limiting, JWT (auth), Roles (authz), Interceptor de Auditoría
   providers: [
