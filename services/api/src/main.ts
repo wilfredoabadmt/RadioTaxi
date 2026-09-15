@@ -6,6 +6,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -20,7 +21,8 @@ async function bootstrap() {
       !req.url.startsWith('/api') &&
       !req.url.startsWith('/docs') &&
       req.url !== '/' &&
-      req.url !== '/health'
+      req.url !== '/health' &&
+      req.url !== '/metrics'
     ) {
       req.url = `/api${req.url}`;
     }
@@ -81,6 +83,7 @@ async function bootstrap() {
   });
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   // ============================================================================
   // Especificación OpenAPI / Swagger (Metodología SDD - Nivel 2: REST Contract)
