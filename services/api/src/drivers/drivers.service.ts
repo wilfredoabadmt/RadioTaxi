@@ -124,4 +124,74 @@ export class DriversService {
       return deleted;
     });
   }
+
+  // ===========================================================================
+  // Gestión de Documentación de Choferes (DriverDocument)
+  // ===========================================================================
+
+  async addDocument(driverId: number, dto: any) {
+    await this.findOne(driverId);
+    return this.prisma.driverDocument.create({
+      data: {
+        driverId,
+        documentType: dto.documentType,
+        documentNumber: dto.documentNumber,
+        issuedAt: dto.issuedAt ? new Date(dto.issuedAt) : null,
+        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
+        fileUrl: dto.fileUrl ?? null,
+        verified: false,
+      },
+    });
+  }
+
+  async findDocuments(driverId: number) {
+    await this.findOne(driverId);
+    return this.prisma.driverDocument.findMany({
+      where: { driverId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async verifyDocument(driverId: number, docId: number) {
+    await this.findOne(driverId);
+    const doc = await this.prisma.driverDocument.findFirst({
+      where: { id: docId, driverId },
+    });
+    if (!doc) {
+      throw new NotFoundException(`Documento #${docId} no encontrado para este conductor`);
+    }
+
+    return this.prisma.driverDocument.update({
+      where: { id: docId },
+      data: { verified: true },
+    });
+  }
+
+  // ===========================================================================
+  // Cumplimiento Regulatorio Boliviano (ComplianceRecord: TIC, CUDAP, NIT)
+  // ===========================================================================
+
+  async addCompliance(driverId: number, dto: any) {
+    await this.findOne(driverId);
+    return this.prisma.complianceRecord.create({
+      data: {
+        driverId,
+        companyId: dto.companyId,
+        ticNumber: dto.ticNumber ?? null,
+        cudapNumber: dto.cudapNumber ?? null,
+        nit: dto.nit ?? null,
+        commerceRegistry: dto.commerceRegistry ?? null,
+        validUntil: dto.validUntil ? new Date(dto.validUntil) : null,
+        status: dto.status ?? 'valid',
+      },
+    });
+  }
+
+  async findCompliance(driverId: number) {
+    await this.findOne(driverId);
+    return this.prisma.complianceRecord.findMany({
+      where: { driverId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
 }

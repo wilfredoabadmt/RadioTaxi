@@ -69,4 +69,70 @@ export class DriversController {
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.driversService.remove(id);
   }
+
+  // ---------------------------------------------------------------------------
+  // Documentación de Choferes
+  // ---------------------------------------------------------------------------
+
+  @Post(':id/documents')
+  @Roles('ADMIN', 'DISPATCHER')
+  @Audit('CREATE', 'DriverDocument')
+  @ApiOperation({ summary: 'Registrar documento de conductor (Licencia, SOAT, ITV, etc.)' })
+  @ApiParam({ name: 'id', description: 'ID del conductor' })
+  @ApiResponse({ status: 201, description: 'Documento registrado' })
+  addDocument(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: any,
+  ) {
+    return this.driversService.addDocument(id, body);
+  }
+
+  @Get(':id/documents')
+  @Roles('ADMIN', 'DISPATCHER', 'DRIVER')
+  @ApiOperation({ summary: 'Listar documentos registrados de un conductor' })
+  @ApiParam({ name: 'id', description: 'ID del conductor' })
+  @ApiResponse({ status: 200, description: 'Lista de documentos' })
+  findDocuments(@Param('id', ParseIntPipe) id: number) {
+    return this.driversService.findDocuments(id);
+  }
+
+  @Patch(':id/documents/:docId/verify')
+  @Roles('ADMIN', 'DISPATCHER')
+  @Audit('VERIFY', 'DriverDocument')
+  @ApiOperation({ summary: 'Aprobar o verificar validez de un documento' })
+  @ApiParam({ name: 'id', description: 'ID del conductor' })
+  @ApiParam({ name: 'docId', description: 'ID del documento' })
+  @ApiResponse({ status: 200, description: 'Documento verificado' })
+  verifyDocument(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('docId', ParseIntPipe) docId: number,
+  ) {
+    return this.driversService.verifyDocument(id, docId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Cumplimiento Regulatorio Boliviano (TIC, CUDAP, NIT)
+  // ---------------------------------------------------------------------------
+
+  @Post(':id/compliance')
+  @Roles('ADMIN', 'DISPATCHER')
+  @Audit('CREATE', 'ComplianceRecord')
+  @ApiOperation({ summary: 'Registrar o actualizar registro de cumplimiento TIC/CUDAP/NIT' })
+  @ApiParam({ name: 'id', description: 'ID del conductor' })
+  @ApiResponse({ status: 201, description: 'Registro regulatorio guardado' })
+  addCompliance(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: any,
+  ) {
+    return this.driversService.addCompliance(id, body);
+  }
+
+  @Get(':id/compliance')
+  @Roles('ADMIN', 'DISPATCHER', 'DRIVER')
+  @ApiOperation({ summary: 'Consultar estado regulatorio y vigencia de TIC/CUDAP' })
+  @ApiParam({ name: 'id', description: 'ID del conductor' })
+  @ApiResponse({ status: 200, description: 'Historial regulatorio' })
+  findCompliance(@Param('id', ParseIntPipe) id: number) {
+    return this.driversService.findCompliance(id);
+  }
 }
