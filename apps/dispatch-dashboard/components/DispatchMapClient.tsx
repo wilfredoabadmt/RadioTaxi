@@ -11,6 +11,7 @@ import {
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import type { VehicleDTO, TripRequestDTO } from '@shared/types/src';
 
 const defaultIcon = new L.Icon({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -37,9 +38,9 @@ function MapFocusHandler({ targetCoords }: { targetCoords: [number, number] | nu
 }
 
 export interface DispatchMapClientProps {
-  tripRequests?: Array<any>;
-  vehicles?: Array<any>;
-  selectedTripRequest?: any | null;
+  tripRequests?: Array<TripRequestDTO>;
+  vehicles?: Array<VehicleDTO>;
+  selectedTripRequest?: TripRequestDTO | null;
   selectedVehicleId?: number | null;
   centerLat?: number;
   centerLng?: number;
@@ -175,13 +176,13 @@ const DispatchMapClient = ({
 
         {/* Marcadores de Solicitudes Pendientes (Origen) */}
         {tripRequests
-          .filter((r) => r.originLat && r.originLng)
+          .filter((r) => r.originLat != null && r.originLng != null)
           .map((request) => {
             const isSelected = selectedTripRequest?.id === request.id;
             return (
               <Marker
                 key={`origin-${request.id}`}
-                position={[request.originLat, request.originLng]}
+                position={[request.originLat!, request.originLng!]}
               >
                 <Popup>
                   <div className="text-xs space-y-1">
@@ -205,11 +206,11 @@ const DispatchMapClient = ({
 
         {/* Marcadores de Destino */}
         {tripRequests
-          .filter((r) => r.destinationLat && r.destinationLng)
+          .filter((r) => r.destinationLat != null && r.destinationLng != null)
           .map((request) => (
             <Marker
               key={`dest-${request.id}`}
-              position={[request.destinationLat, request.destinationLng]}
+              position={[request.destinationLat!, request.destinationLng!]}
             >
               <Popup>
                 <div className="text-xs space-y-1">
@@ -243,8 +244,8 @@ const DispatchMapClient = ({
         {filteredVehicles
           .filter((v) => (v.currentLat || v.currentLatitude) && (v.currentLng || v.currentLongitude))
           .map((vehicle) => {
-            const lat = vehicle.currentLat || vehicle.currentLatitude;
-            const lng = vehicle.currentLng || vehicle.currentLongitude;
+            const lat = (vehicle.currentLat || vehicle.currentLatitude)!;
+            const lng = (vehicle.currentLng || vehicle.currentLongitude)!;
             const isAvailable = vehicle.status === 'available';
             const isBusy = vehicle.status === 'busy';
             const isSelected = selectedVehicleId === vehicle.id;

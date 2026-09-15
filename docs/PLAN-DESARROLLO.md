@@ -226,7 +226,7 @@ Monorepo npm workspaces (`apps/*`, `services/*`, `packages/**/*`). Stack: **Nest
 - [x] **5.7 — Panel de reportes**: generación de reporte corporativo por rango de fechas y descarga en Excel (`.xlsx`). ✅ 2026-09-15 — Implementado en `/reports` con streaming binario desde API.
 - [x] **5.8 — Mapa mejorado**: filtros de vehículos por estado (libres en verde, en ruta en ámbar, offline en gris), trazado de ruta activa con polylines Leaflet (origen a destino / vehículo a origen), tooltips y auto-centrado interactivo. ✅ 2026-09-15 — `DispatchMapClient.tsx` con `Polyline`, `MapFocusHandler` y barra de filtrado rápido.
 - [x] **5.9 — Notificaciones/alertas operativas**: alerta visual de solicitudes en espera prolongada (> 3 minutos), monitoreo de telemetría y campanilla sonora de notificación (Web Audio API) con conmutador de silencio para el despachador. ✅ 2026-09-15 — Implementado en `pages/index.tsx`.
-- [ ] **5.10 — Consumir `packages/shared/types`.**
+- [x] **5.10 — Consumir `packages/shared/types`**: Eliminación de tipos locales ad-hoc en el dashboard; consumo directo de `VehicleDTO` y `TripRequestDTO` desde `@shared/types/src` en `DispatchMapClient.tsx` y `pages/index.tsx`. ✅ 2026-09-15 — Compilación estricta pasando al 100%.
 
 **Criterio de aceptación:** despachador gestiona flota, cola, reportes y catálogos desde vistas dedicadas con datos en tiempo real.
 
@@ -299,11 +299,11 @@ Monorepo npm workspaces (`apps/*`, `services/*`, `packages/**/*`). Stack: **Nest
 
 ## 6. Deuda técnica transversal
 
-- [ ] **DT1 — Activar `packages/shared`.** Consolidar tipos (`AuthUser`, `TripDetail`, `FareBreakdown`) y utils (`formatCurrency`, geo/Haversine) y consumirlos desde las 3 apps + servicios. Eliminar duplicados.
+- [x] **DT1 — Activar `packages/shared`.** Consolidación de tipos de dominio (`VehicleDTO`, `TripRequestDTO`, `TripDTO`, `FareBreakdown`, `AuthUser`, contratos de eventos Socket.io) en `packages/shared/types` y utilidades geodésicas Haversine y formato de moneda BOB en `packages/shared/utils`. ✅ 2026-09-15 — Activo y consumido en apps y servicios.
 - [ ] **DT2 — Eliminar todos los `any`/`as any`** del API tras regenerar el cliente Prisma.
 - [ ] **DT3 — Producción de mapas**: OSRM/Nominatim públicos son rate-limited y no aptos para producción. Evaluar self-host o proveedor (Mapbox/Google) con API key + caché.
 - [ ] **DT4 — Limpieza de repo**: binarios `handle*.exe`, `*.zip`, `temp_contents.txt`, carpeta `openrouter/` (revisar si aplica) fuera del control de versiones.
-- [ ] **DT5 — Consistencia de escritura de ubicación** entre API y realtime (evitar dos caminos que escriban `currentLat/Lng`).
+- [x] **DT5 — Consistencia de escritura de ubicación** entre API y realtime: Unificación de persistencia mediante transacción atómica que actualiza en simultáneo `Driver` y `Vehicle` asignados tanto en `POST /drivers/:id/location` (REST) como en `vehicle:update` (Socket.io). ✅ 2026-09-15 — Resuelto.
 - [ ] **DT6 — README**: actualizar los "Próximos pasos" y enlazar este plan.
 
 ---

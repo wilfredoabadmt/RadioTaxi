@@ -3,6 +3,7 @@ import dynamic from 'next/dynamic';
 import type { Socket } from 'socket.io-client';
 import AppLayout from '../components/layout/AppLayout';
 import MapPlaceholder from '../components/MapPlaceholder';
+import type { VehicleDTO, TripRequestDTO } from '@shared/types/src';
 
 // Cargar mapa Leaflet en el cliente para evitar problemas de SSR
 const DispatchMapClient = dynamic(() => import('../components/DispatchMapClient'), {
@@ -28,8 +29,8 @@ const getRealtimeUrl = () => {
 };
 
 export default function Home() {
-  const [tripRequests, setTripRequests] = useState<any[]>([]);
-  const [vehicles, setVehicles] = useState<any[]>([]);
+  const [tripRequests, setTripRequests] = useState<TripRequestDTO[]>([]);
+  const [vehicles, setVehicles] = useState<VehicleDTO[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -41,7 +42,7 @@ export default function Home() {
   const [loadingAi, setLoadingAi] = useState<Record<number, boolean>>({});
 
   // Estados de ruta activa y alertas (Fases 5.8 y 5.9)
-  const [selectedTripRequest, setSelectedTripRequest] = useState<any | null>(null);
+  const [selectedTripRequest, setSelectedTripRequest] = useState<TripRequestDTO | null>(null);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
 
   // Síntesis de campanilla de alerta sonora (Web Audio API)

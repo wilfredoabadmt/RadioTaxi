@@ -80,6 +80,13 @@ export interface VehicleDTO {
   vehicleType?: string | null;
   driverId?: number | null;
   companyId?: number | null;
+  driver?: {
+    id?: number;
+    user?: {
+      name?: string | null;
+      phone?: string | null;
+    } | null;
+  } | null;
 }
 
 export interface DriverDTO {
@@ -103,6 +110,7 @@ export interface TripRequestDTO {
   id: number;
   customerId: number;
   customerName?: string | null;
+  passengerName?: string | null;
   customerPhone?: string | null;
   companyId?: number | null;
   driverId?: number | null;
