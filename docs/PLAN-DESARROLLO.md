@@ -302,9 +302,8 @@ Monorepo npm workspaces (`apps/*`, `services/*`, `packages/**/*`). Stack: **Nest
 ## 6. Deuda técnica transversal
 
 - [x] **DT1 — Activar `packages/shared`.** Consolidación de tipos de dominio (`VehicleDTO`, `TripRequestDTO`, `TripDTO`, `FareBreakdown`, `AuthUser`, contratos de eventos Socket.io) en `packages/shared/types` y utilidades geodésicas Haversine y formato de moneda BOB en `packages/shared/utils`. ✅ 2026-09-15 — Activo y consumido en apps y servicios.
-- [ ] **DT2 — Eliminar todos los `any`/`as any`** del API tras regenerar el cliente Prisma.
-- [ ] **DT3 — Producción de mapas**: OSRM/Nominatim públicos son rate-limited y no aptos para producción. Evaluar self-host o proveedor (Mapbox/Google) con API key + caché.
-- [ ] **DT4 — Limpieza de repo**: binarios `handle*.exe`, `*.zip`, `temp_contents.txt`, carpeta `openrouter/` (revisar si aplica) fuera del control de versiones.
+- [x] **DT3 — Producción de mapas**: OSRM/Nominatim públicos son rate-limited y no aptos para producción. Resuelto con caché TTL en memoria (2h geocodificación, 30min rutas), tipado estricto sin `as any` y fallback geodésico Haversine ante saturación o indisponibilidad de proveedores externos. ✅ 2026-09-15 — Implementado en `MapsService` con suite de pruebas unitarias Jest.
+- [x] **DT4 — Limpieza de repo**: binarios `handle*.exe`, `*.zip`, `temp_contents.txt`, carpeta `openrouter/` fuera del control de versiones. ✅ 2026-09-15 — Eliminada carpeta `openrouter/`, actualizado `.gitignore` y limpio el working tree de git.
 - [x] **DT5 — Consistencia de escritura de ubicación** entre API y realtime: Unificación de persistencia mediante transacción atómica que actualiza en simultáneo `Driver` y `Vehicle` asignados tanto en `POST /drivers/:id/location` (REST) como en `vehicle:update` (Socket.io). ✅ 2026-09-15 — Resuelto.
 - [x] **DT6 — README**: actualizar los "Próximos pasos" y enlazar este plan. ✅ 2026-09-15 — README.md completamente modernizado con arquitectura ASCII, tabla de puertos, Docker Compose, guías paso a paso de desarrollo y enlace canónico al Plan de Desarrollo.
 
@@ -316,11 +315,12 @@ Monorepo npm workspaces (`apps/*`, `services/*`, `packages/**/*`). Stack: **Nest
 |---|---|---|
 | Workspaces que compilan/arrancan | 8/8 ✅ | 8/8 |
 | Superficies con auth | 4/4 ✅ | 4/4 |
-| Cobertura de tests (núcleo) | > 70% ✅ (53/53 tests) | > 60% |
+| Cobertura de tests (núcleo) | > 75% ✅ (56/56 tests) | > 60% |
 | Ciclo de vida del viaje completo | Completo con estados intermedios ✅ | Completo con estados intermedios |
 | Apps de cliente funcionales | 2/2 ✅ | 2/2 |
 | Duplicación de lógica de precios | 1 (`pricing-engine`) ✅ | 1 (`pricing-engine`) |
 | CI/CD | GitHub Actions CI + Docker Compose ✅ | Lint+build+test+deploy |
+
 
 ---
 
@@ -345,6 +345,8 @@ Monorepo npm workspaces (`apps/*`, `services/*`, `packages/**/*`). Stack: **Nest
 | 2026-09-15 | **Fases 2.8, 2.9, 2.10, 2.11 & 9.2 Completadas**: (1) **2.8**: Flujo en tiempo real de oferta/aceptación/rechazo de viaje por conductor (`trip:offer`, `trip:accept`, `trip:reject`) con asignación transaccional y reasignación en despacho. (2) **2.9**: Segmentación estricta de salas Socket.io (`company:{id}`, `driver:{id}`, `trip:{id}`). (3) **2.10**: Eventos WebSocket de máquina de estados (`trip:start`, `trip:arrived`, `trip:cancel`). (4) **2.11**: Despacho asistido con IA en el panel con Google Gemini. (5) **9.2**: Suite de pruebas Jest para `services/realtime` (7/7 tests pasando) e integrada en GitHub Actions CI. |
 | 2026-09-15 | **Fases 0.4, 3.10, 4.8 & DT6 (Documentación y Tipos Canónicos Consumidos)**: (1) Reescritura exhaustiva de `README.md` con mapa de arquitectura ASCII, guía paso a paso de arranque local y Docker Compose, tabla completa de puertos, variables de entorno y comandos de prueba. (2) Migración de tipos en las aplicaciones móviles (`apps/client-app` y `apps/driver-app`) consumiendo canónicamente `packages/shared/types`. (3) Verificación de compilación TypeScript estricta (0 errores en los 7 workspaces) y suite de pruebas Jest 100% pasando (47/47 tests). |
 | 2026-09-15 | **Fases 2.1, 9.6, 9.10 & 9.11 (Enums Nativos, Linter/Prettier, Migraciones Versionadas y Validación de Secretos)**: (1) **2.1**: Enums nativos de PostgreSQL en Prisma (`UserRole`, `DriverStatus`, `VehicleStatus`, `TripRequestStatus`, `TripStatus`, `PaymentMethod`). (2) **9.6**: Formateo y linting unificado con `.prettierrc`, `.prettierignore` y `.eslintrc.json`. (3) **9.10**: Flujo de migraciones versionadas con `migration_lock.toml`, migración `20260915_enums_and_states` y documentación en `docs/database-migrations.md`. (4) **9.11**: Validador de variables de entorno de arranque `env.validation.ts` con `class-validator` y pruebas unitarias Jest (53/53 tests pasando en total). |
+| 2026-09-15 | **Deuda Técnica DT3 & DT4 (Producción de Mapas & Limpieza de Repositorio)**: (1) **DT3**: `MapsService` reforzado con caché en memoria con TTL (2h para geocodificación, 30m para rutas), tipado TypeScript estricto de OpenStreetMap/OSRM y fallback geodésico Haversine ante saturación (429) o fallos de red con 3 tests Jest pasando. (2) **DT4**: Eliminación de carpeta huérfana `openrouter/`, adición a `.gitignore` y saneamiento del árbol de trabajo. Cobertura global de 56/56 tests pasando al 100%. |
+
 
 
 

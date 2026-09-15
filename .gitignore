@@ -18,3 +18,5 @@ handle*.exe
 *.zip
 temp_contents.txt
 desktop.ini
+openrouter/
+
