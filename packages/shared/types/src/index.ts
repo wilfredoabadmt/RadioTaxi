@@ -222,3 +222,84 @@ export interface ServerToClientEvents {
   'vehicle:location_changed': (data: { vehicleId: number; lat: number; lng: number }) => void;
   'notification': (data: { message: string; type: 'info' | 'warning' | 'error' | 'success' }) => void;
 }
+
+export interface TripAssignment {
+  tripRequestId: number;
+  vehicleId: number;
+  tripId: number;
+}
+
+export interface TripCompletedEvent {
+  tripId?: number;
+  vehicleId?: number;
+  fareTotal: number;
+  fareBreakdown?: {
+    ruleId?: number;
+    baseFare: number;
+    distanceCost: number;
+    timeCost: number;
+    geofenceSurcharge: number;
+    tollSurcharge?: number;
+    peakMultiplier?: number;
+    total: number;
+  } | null;
+}
+
+export interface TripDetail {
+  id: number;
+  status: string;
+  fareTotal: number;
+  startedAt: string;
+  endedAt: string | null;
+  tripRequest: {
+    id: number;
+    originAddress: string | null;
+    originLat: number | null;
+    originLng: number | null;
+    destinationAddress: string | null;
+    destinationLat: number | null;
+    destinationLng: number | null;
+    status: string;
+    customer: {
+      id: number;
+      name: string | null;
+      phone: string | null;
+    } | null;
+  };
+  vehicle: {
+    id: number;
+    plate: string | null;
+  };
+}
+
+export interface AuthResponse {
+  accessToken: string;
+  user: AuthUser;
+}
+
+export interface TripRequestDetail {
+  id: number;
+  customerId: number;
+  originAddress: string | null;
+  originLat: number | null;
+  originLng: number | null;
+  destinationAddress: string | null;
+  destinationLat: number | null;
+  destinationLng: number | null;
+  status: string;
+  scheduledAt: string | null;
+  requestedAt: string;
+  driver?: {
+    id: number;
+    name: string | null;
+    phone: string | null;
+  } | null;
+  vehicle?: {
+    id: number;
+    plate: string | null;
+    currentLatitude: number | null;
+    currentLongitude: number | null;
+  } | null;
+}
+
+
