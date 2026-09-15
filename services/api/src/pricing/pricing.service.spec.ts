@@ -10,9 +10,19 @@ describe('PricingService (SDD Fare Calculation Contract)', () => {
     pricingRule: {
       findUnique: jest.fn(),
       findMany: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
+    tripFare: {
+      count: jest.fn(),
     },
     geofence: {
+      findUnique: jest.fn(),
       findMany: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
     },
   };
 
@@ -26,6 +36,76 @@ describe('PricingService (SDD Fare Calculation Contract)', () => {
 
     service = module.get<PricingService>(PricingService);
     jest.clearAllMocks();
+  });
+
+  describe('CRUD de PricingRules', () => {
+    it('debe crear una nueva regla de tarificación', async () => {
+      const dto = {
+        companyId: 1,
+        name: 'Tarifa Aeropuerto',
+        baseFare: 15,
+        kmRate: 4,
+        minuteRate: 0.8,
+        minFare: 20,
+      };
+
+      mockPrisma.pricingRule.create.mockResolvedValue({ id: 101, ...dto, active: true });
+
+      const created = await service.createRule(dto as any);
+      expect(created.id).toBe(101);
+      expect(mockPrisma.pricingRule.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('debe desactivar la regla en lugar de borrarla si tiene viajes asociados (TripFare)', async () => {
+      mockPrisma.pricingRule.findUnique.mockResolvedValue({ id: 5, name: 'Tarifa Antigua' });
+      mockPrisma.tripFare.count.mockResolvedValue(12); // tiene 12 viajes históricos
+      mockPrisma.pricingRule.update.mockResolvedValue({ id: 5, active: false });
+
+      await service.deleteRule(5);
+
+      expect(mockPrisma.pricingRule.update).toHaveBeenCalledWith({
+        where: { id: 5 },
+        data: { active: false },
+      });
+      expect(mockPrisma.pricingRule.delete).not.toHaveBeenCalled();
+    });
+
+    it('debe eliminar la regla físicamente si no tiene viajes asociados', async () => {
+      mockPrisma.pricingRule.findUnique.mockResolvedValue({ id: 6, name: 'Tarifa Borrador' });
+      mockPrisma.tripFare.count.mockResolvedValue(0);
+      mockPrisma.pricingRule.delete.mockResolvedValue({ id: 6 });
+
+      await service.deleteRule(6);
+
+      expect(mockPrisma.pricingRule.delete).toHaveBeenCalledWith({
+        where: { id: 6 },
+      });
+    });
+  });
+
+  describe('CRUD de Geofences', () => {
+    it('debe registrar una nueva geocerca perimetral', async () => {
+      const dto = {
+        companyId: 1,
+        name: 'Aeropuerto El Alto',
+        surcharge: 15,
+        areaGeoJson: '{"type":"Polygon","coordinates":[]}',
+      };
+
+      mockPrisma.geofence.create.mockResolvedValue({ id: 201, ...dto });
+
+      const created = await service.createGeofence(dto as any);
+      expect(created.id).toBe(201);
+      expect(mockPrisma.geofence.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('debe eliminar una geocerca existente', async () => {
+      mockPrisma.geofence.findUnique.mockResolvedValue({ id: 201 });
+      mockPrisma.geofence.delete.mockResolvedValue({ id: 201 });
+
+      await service.deleteGeofence(201);
+      expect(mockPrisma.geofence.delete).toHaveBeenCalledWith({ where: { id: 201 } });
+    });
   });
 
   describe('calculateFare', () => {

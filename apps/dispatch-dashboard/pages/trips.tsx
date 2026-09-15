@@ -9,12 +9,69 @@ const getApiBaseUrl = () => {
   return raw.endsWith('/api') ? raw : `${raw.replace(/\/+$/, '')}/api`;
 };
 
+interface TripReceipt {
+  receiptNumber: string;
+  authorizationCode: string;
+  issuedAt: string;
+  status: string;
+  paymentMethod: string;
+  currency: string;
+  company: {
+    name: string;
+    nit: string;
+    address: string;
+  };
+  passenger: {
+    name: string;
+    phone: string;
+    email: string;
+  };
+  driver: {
+    name: string;
+    license: string;
+  };
+  vehicle: {
+    plate: string;
+    brand: string;
+    model: string;
+    color: string;
+  };
+  route: {
+    origin: string;
+    destination: string;
+    distanceKm: number;
+    durationMinutes: number;
+  };
+  fareBreakdown: {
+    baseFare: number;
+    distanceFare: number;
+    timeFare: number;
+    totalFare: number;
+  };
+  legalNotice: string;
+}
+
 export default function TripsPage() {
   const [trips, setTrips] = useState<any[]>([]);
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Estados de Modales
+  const [selectedReceipt, setSelectedReceipt] = useState<TripReceipt | null>(null);
+  const [receiptLoading, setReceiptLoading] = useState(false);
+
+  const [paymentTrip, setPaymentTrip] = useState<any | null>(null);
+  const [paymentForm, setPaymentForm] = useState({
+    paymentMethod: 'qr_bolivia',
+    amount: 25.0,
+    transactionReference: '',
+    notes: '',
+  });
+  const [qrIntentData, setQrIntentData] = useState<any | null>(null);
+  const [submittingPayment, setSubmittingPayment] = useState(false);
 
   const fetchTrips = async () => {
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
@@ -44,6 +101,111 @@ export default function TripsPage() {
     fetchTrips();
   }, []);
 
+  const showNotification = (msg: string) => {
+    setSuccessMsg(msg);
+    setTimeout(() => setSuccessMsg(null), 4000);
+  };
+
+  // Cargar Recibo Digital
+  const handleOpenReceipt = async (tripId: number) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) return;
+
+    setReceiptLoading(true);
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/payments/receipt/${tripId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) throw new Error('No se pudo generar el comprobante digital');
+
+      const data = await res.json();
+      setSelectedReceipt(data);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setReceiptLoading(false);
+    }
+  };
+
+  // Abrir Modal para Liquidar Pago
+  const handleOpenPayment = async (trip: any) => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) return;
+
+    const finalAmount = Number(trip.fareTotal || trip.finalFare || 25.0);
+    setPaymentTrip(trip);
+    setPaymentForm({
+      paymentMethod: 'qr_bolivia',
+      amount: finalAmount,
+      transactionReference: '',
+      notes: '',
+    });
+    setQrIntentData(null);
+
+    // Generar intención previa de QR
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/payments/intent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          tripId: trip.id,
+          paymentMethod: 'qr_bolivia',
+          customerName: trip.passenger?.name || trip.tripRequest?.customer?.name || 'Pasajero',
+        }),
+      });
+      if (res.ok) {
+        setQrIntentData(await res.json());
+      }
+    } catch {
+      // Intención opcional
+    }
+  };
+
+  // Confirmar Liquidación de Pago
+  const handleConfirmPaymentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token || !paymentTrip) return;
+
+    setSubmittingPayment(true);
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/payments/confirm`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          tripId: paymentTrip.id,
+          paymentMethod: paymentForm.paymentMethod,
+          amount: Number(paymentForm.amount),
+          transactionReference: paymentForm.transactionReference || `PAGO-${Date.now()}`,
+          notes: paymentForm.notes || 'Liquidado desde despacho',
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || 'Error al registrar el pago');
+      }
+
+      showNotification(`Pago de Bs ${paymentForm.amount} registrado con éxito.`);
+      setPaymentTrip(null);
+      await fetchTrips();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSubmittingPayment(false);
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'COMPLETED':
@@ -58,6 +220,21 @@ export default function TripsPage() {
         return 'bg-red-500/10 text-red-400 border-red-500/30';
       default:
         return 'bg-slate-500/10 text-slate-400 border-slate-500/30';
+    }
+  };
+
+  const getPaymentBadge = (method?: string | null) => {
+    switch (method) {
+      case 'qr_bolivia':
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">📱 QR Simple</span>;
+      case 'card':
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-purple-500/10 text-purple-400 border border-purple-500/30">💳 Tarjeta</span>;
+      case 'cash':
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">💵 Efectivo</span>;
+      case 'corporate_account':
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">🏢 Corporativo</span>;
+      default:
+        return <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">⏳ Pendiente</span>;
     }
   };
 
@@ -76,33 +253,45 @@ export default function TripsPage() {
   });
 
   const totalCompleted = trips.filter((t) => t.status === 'COMPLETED').length;
-  const totalInProgress = trips.filter((t) => t.status === 'IN_PROGRESS' || t.status === 'ASSIGNED' || t.status === 'ARRIVED').length;
-  const totalCancelled = trips.filter((t) => t.status === 'CANCELLED').length;
+  const totalInProgress = trips.filter((t) => ['IN_PROGRESS', 'ASSIGNED', 'ARRIVED'].includes(t.status)).length;
   const totalRevenue = trips
-    .filter((t) => t.status === 'COMPLETED' && t.finalFare)
-    .reduce((acc, t) => acc + Number(t.finalFare), 0);
+    .filter((t) => t.status === 'COMPLETED' && (t.fareTotal || t.finalFare))
+    .reduce((acc, t) => acc + Number(t.fareTotal || t.finalFare || 0), 0);
 
   return (
-    <AppLayout title="Historial de Viajes | RadioTaxi SaaS" onRefresh={fetchTrips} loading={loading}>
+    <AppLayout title="Historial de Viajes & Pagos | RadioTaxi SaaS" onRefresh={fetchTrips} loading={loading}>
       <div className="space-y-6">
         {/* Encabezado */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
-              <span>📑</span> Historial y Auditoría de Viajes
+              <span>📑</span> Historial, Auditoría & Liquidación de Pagos
             </h1>
             <p className="text-sm text-slate-400">
-              Trazabilidad completa de la máquina de estados del despacho y liquidación de tarifas.
+              Trazabilidad completa de la máquina de estados, cobros multicanal (QR Simple Bolivia, Tarjeta, Efectivo) y comprobantes electrónicos.
             </p>
           </div>
         </div>
+
+        {/* Notificaciones */}
+        {successMsg && (
+          <div className="p-4 rounded-xl bg-emerald-950/50 border border-emerald-500/40 text-emerald-300 text-xs font-medium flex items-center gap-2 animate-fadeIn">
+            <span>✅</span> {successMsg}
+          </div>
+        )}
+
+        {error && (
+          <div className="p-4 rounded-xl bg-red-950/40 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
+            <span>⚠️</span> {error}
+          </div>
+        )}
 
         {/* Tarjetas KPI */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-4 backdrop-blur-xl">
             <span className="text-xs text-slate-500 font-mono block uppercase">Total Viajes</span>
             <span className="text-2xl font-black text-white mt-1 block">{trips.length}</span>
-            <span className="text-[11px] text-slate-400 mt-1 block">Registrados en el sistema</span>
+            <span className="text-[11px] text-slate-400 mt-1 block">Registrados en sistema</span>
           </div>
 
           <div className="bg-cyan-950/20 border border-cyan-500/30 rounded-2xl p-4 backdrop-blur-xl">
@@ -118,7 +307,7 @@ export default function TripsPage() {
           </div>
 
           <div className="bg-purple-950/20 border border-purple-500/30 rounded-2xl p-4 backdrop-blur-xl">
-            <span className="text-xs text-purple-400 font-mono block uppercase">Facturación Acumulada</span>
+            <span className="text-xs text-purple-400 font-mono block uppercase">Liquidación Acumulada</span>
             <span className="text-2xl font-black text-purple-300 mt-1 block">
               Bs {totalRevenue.toFixed(2)}
             </span>
@@ -128,7 +317,6 @@ export default function TripsPage() {
 
         {/* Barra de Filtros y Búsqueda */}
         <div className="bg-slate-900/50 border border-slate-800/80 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 backdrop-blur-xl">
-          {/* Botones de estado */}
           <div className="flex flex-wrap gap-2 text-xs font-mono">
             {['ALL', 'IN_PROGRESS', 'ARRIVED', 'ASSIGNED', 'COMPLETED', 'CANCELLED'].map((st) => (
               <button
@@ -145,7 +333,6 @@ export default function TripsPage() {
             ))}
           </div>
 
-          {/* Buscador */}
           <div className="w-full sm:w-72">
             <input
               type="text"
@@ -157,12 +344,6 @@ export default function TripsPage() {
           </div>
         </div>
 
-        {error && (
-          <div className="p-4 rounded-xl bg-red-950/40 border border-red-500/40 text-red-300 text-xs">
-            ⚠️ {error}
-          </div>
-        )}
-
         {/* Tabla de Viajes */}
         <div className="bg-slate-900/40 border border-slate-800/80 rounded-2xl overflow-hidden backdrop-blur-xl">
           <div className="overflow-x-auto">
@@ -171,12 +352,12 @@ export default function TripsPage() {
                 <tr>
                   <th className="py-3.5 px-4">ID</th>
                   <th className="py-3.5 px-4">Estado</th>
-                  <th className="py-3.5 px-4">Vehículo & Conductor</th>
+                  <th className="py-3.5 px-4">Vehículo & Chofer</th>
                   <th className="py-3.5 px-4">Pasajero</th>
-                  <th className="py-3.5 px-4">Ruta (Origen → Destino)</th>
-                  <th className="py-3.5 px-4 text-right">Distancia</th>
+                  <th className="py-3.5 px-4">Ruta</th>
+                  <th className="py-3.5 px-4">Método de Pago</th>
                   <th className="py-3.5 px-4 text-right">Tarifa (BOB)</th>
-                  <th className="py-3.5 px-4 text-right">Fecha</th>
+                  <th className="py-3.5 px-4 text-center">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -187,66 +368,298 @@ export default function TripsPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredTrips.map((trip) => (
-                    <tr key={trip.id} className="hover:bg-slate-800/30 transition">
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-400">
-                        #{trip.id}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${getStatusBadge(
-                            trip.status
-                          )}`}
-                        >
-                          {trip.status}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <div className="font-bold text-white font-mono flex items-center gap-1.5">
-                          <span>🚗</span> {trip.vehicle?.plate || 'Sin Placa'}
-                        </div>
-                        <div className="text-[11px] text-slate-400">
-                          {trip.driver?.user?.name || 'Conductor no asignado'}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <div className="font-medium text-slate-200">
-                          {trip.passenger?.name || trip.tripRequest?.passengerName || 'Pasajero General'}
-                        </div>
-                        <div className="text-[11px] text-slate-500 font-mono">
-                          {trip.passenger?.phone || trip.tripRequest?.passengerPhone || 'Sin teléfono'}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 max-w-xs truncate">
-                        <div className="text-slate-200 font-medium truncate flex items-center gap-1">
-                          <span className="text-emerald-400">●</span> {trip.originAddress || 'Origen GPS'}
-                        </div>
-                        <div className="text-slate-400 text-[11px] truncate flex items-center gap-1">
-                          <span className="text-red-400">●</span> {trip.destinationAddress || 'Destino por determinar'}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 text-right font-mono text-slate-300">
-                        {trip.distanceKm ? `${Number(trip.distanceKm).toFixed(2)} km` : '-'}
-                      </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-bold text-cyan-300 text-sm">
-                        {trip.finalFare ? `Bs ${Number(trip.finalFare).toFixed(2)}` : trip.estimatedFare ? `~Bs ${Number(trip.estimatedFare).toFixed(2)}` : '-'}
-                      </td>
-                      <td className="py-3.5 px-4 text-right font-mono text-[11px] text-slate-500">
-                        {new Date(trip.createdAt).toLocaleString('es-BO', {
-                          month: 'short',
-                          day: '2-digit',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </td>
-                    </tr>
-                  ))
+                  filteredTrips.map((trip) => {
+                    const finalFare = trip.fareTotal || trip.finalFare;
+                    return (
+                      <tr key={trip.id} className="hover:bg-slate-800/30 transition">
+                        <td className="py-3.5 px-4 font-mono font-bold text-slate-400">
+                          #{trip.id}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${getStatusBadge(
+                              trip.status
+                            )}`}
+                          >
+                            {trip.status}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-white font-mono flex items-center gap-1.5">
+                            <span>🚗</span> {trip.vehicle?.plate || 'Sin Placa'}
+                          </div>
+                          <div className="text-[11px] text-slate-400">
+                            {trip.driver?.user?.name || 'Conductor asignado'}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-medium text-slate-200">
+                            {trip.passenger?.name || trip.tripRequest?.customer?.name || 'Pasajero General'}
+                          </div>
+                          <div className="text-[11px] text-slate-500 font-mono">
+                            {trip.passenger?.phone || trip.tripRequest?.customer?.phone || 'Sin teléfono'}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 max-w-xs truncate">
+                          <div className="text-slate-200 font-medium truncate flex items-center gap-1">
+                            <span className="text-emerald-400">●</span> {trip.originAddress || trip.tripRequest?.originAddress || 'Origen GPS'}
+                          </div>
+                          <div className="text-slate-400 text-[11px] truncate flex items-center gap-1">
+                            <span className="text-red-400">●</span> {trip.destinationAddress || trip.tripRequest?.destinationAddress || 'Destino por determinar'}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          {getPaymentBadge(trip.paymentMethod)}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-bold text-cyan-300 text-sm">
+                          {finalFare ? `Bs ${Number(finalFare).toFixed(2)}` : '~Bs 15.00'}
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => handleOpenReceipt(trip.id)}
+                              className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-mono text-[11px] transition flex items-center gap-1"
+                              title="Ver Comprobante Digital"
+                            >
+                              <span>📄</span> Recibo
+                            </button>
+                            <button
+                              onClick={() => handleOpenPayment(trip)}
+                              className="px-2.5 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 font-mono text-[11px] font-bold transition flex items-center gap-1"
+                              title="Liquidar o Confirmar Pago"
+                            >
+                              <span>💳</span> Cobro
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
         </div>
       </div>
+
+      {/* Modal Comprobante / Recibo Digital Oficial */}
+      {selectedReceipt && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-scaleUp text-slate-200">
+            {/* Cabecera del Recibo */}
+            <div className="border-b border-slate-800 pb-4 flex items-start justify-between">
+              <div>
+                <span className="text-[10px] font-mono text-cyan-400 font-bold uppercase tracking-wider block">
+                  RadioTaxi SaaS Bolivia • Comprobante Digital
+                </span>
+                <h3 className="text-lg font-black text-white mt-0.5">
+                  {selectedReceipt.company.name}
+                </h3>
+                <span className="text-xs text-slate-400 font-mono block">
+                  NIT: {selectedReceipt.company.nit}
+                </span>
+              </div>
+              <button
+                onClick={() => setSelectedReceipt(null)}
+                className="text-slate-400 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Datos Principales */}
+            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800/80 space-y-3 font-mono text-xs">
+              <div className="flex justify-between items-center pb-2 border-b border-slate-800/60">
+                <span className="text-slate-400">NÚMERO DE RECIBO:</span>
+                <span className="text-white font-bold">{selectedReceipt.receiptNumber}</span>
+              </div>
+              <div className="flex justify-between items-center pb-2 border-b border-slate-800/60">
+                <span className="text-slate-400">CÓDIGO DE CONTROL:</span>
+                <span className="text-cyan-300 font-bold">{selectedReceipt.authorizationCode}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-400">ESTADO / MÉTODO:</span>
+                <span className="text-emerald-400 font-bold uppercase">
+                  {selectedReceipt.status} ({selectedReceipt.paymentMethod})
+                </span>
+              </div>
+            </div>
+
+            {/* Detalle de Ruta y Vehículo */}
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                <span className="text-[10px] text-slate-500 font-mono block">MÓVIL / CHOFER</span>
+                <span className="font-bold text-white block mt-0.5">{selectedReceipt.vehicle.plate}</span>
+                <span className="text-slate-400 text-[11px] block">{selectedReceipt.driver.name}</span>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+                <span className="text-[10px] text-slate-500 font-mono block">PASAJERO</span>
+                <span className="font-bold text-white block mt-0.5">{selectedReceipt.passenger.name}</span>
+                <span className="text-slate-400 text-[11px] block">{selectedReceipt.passenger.phone}</span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 text-xs font-mono space-y-1">
+              <div className="flex items-center gap-1.5 text-slate-300">
+                <span className="text-emerald-400">●</span> Origen: <span className="text-white font-medium">{selectedReceipt.route.origin}</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-slate-300">
+                <span className="text-red-400">●</span> Destino: <span className="text-white font-medium">{selectedReceipt.route.destination}</span>
+              </div>
+              <div className="flex justify-between text-[11px] text-slate-400 pt-1">
+                <span>Distancia: {selectedReceipt.route.distanceKm} km</span>
+                <span>Tiempo: {selectedReceipt.route.durationMinutes} min</span>
+              </div>
+            </div>
+
+            {/* Desglose de Tarifa */}
+            <div className="p-4 rounded-xl bg-slate-950 border border-cyan-500/20 font-mono text-xs space-y-1.5">
+              <div className="flex justify-between text-slate-400">
+                <span>Tarifa Base:</span>
+                <span>Bs {selectedReceipt.fareBreakdown.baseFare.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Recorrido por Distancia:</span>
+                <span>Bs {selectedReceipt.fareBreakdown.distanceFare.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Tiempo en Espera / Tráfico:</span>
+                <span>Bs {selectedReceipt.fareBreakdown.timeFare.toFixed(2)}</span>
+              </div>
+              <div className="pt-2 border-t border-slate-800 flex justify-between items-center text-sm font-black text-white">
+                <span className="uppercase text-slate-300">TOTAL PAGADO:</span>
+                <span className="text-xl text-cyan-300">
+                  Bs {selectedReceipt.fareBreakdown.totalFare.toFixed(2)} BOB
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[10px] text-slate-500 text-center leading-relaxed">
+              {selectedReceipt.legalNotice}
+            </p>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setSelectedReceipt(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition"
+              >
+                Cerrar
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-cyan-500/20 transition flex items-center gap-1.5"
+              >
+                <span>🖨️</span> Imprimir Recibo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Registrar / Confirmar Cobro */}
+      {paymentTrip && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 animate-scaleUp">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <span>💳</span> Liquidar Cobro de Carrera #{paymentTrip.id}
+              </h3>
+              <button
+                onClick={() => setPaymentTrip(null)}
+                className="text-slate-400 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmPaymentSubmit} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-400 font-mono mb-1">MÉTODO DE PAGO</label>
+                <select
+                  value={paymentForm.paymentMethod}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, paymentMethod: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-cyan-500"
+                >
+                  <option value="qr_bolivia">📱 QR Simple Bolivia (BCP / BNB / Interoperable)</option>
+                  <option value="cash">💵 Efectivo (Pago en mano al conductor)</option>
+                  <option value="card">💳 Tarjeta de Débito / Crédito</option>
+                  <option value="corporate_account">🏢 Cuenta B2B Corporativa</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-400 font-mono mb-1">MONTO A COBRAR (BS)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="1"
+                  required
+                  value={paymentForm.amount}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, amount: parseFloat(e.target.value) })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono font-bold text-sm focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              {/* Preview de QR Simple Bolivia */}
+              {paymentForm.paymentMethod === 'qr_bolivia' && qrIntentData && (
+                <div className="p-4 rounded-xl bg-slate-950 border border-cyan-500/30 text-center space-y-2">
+                  <div className="w-32 h-32 mx-auto bg-white rounded-lg flex items-center justify-center p-2 shadow-md">
+                    <div className="text-[9px] font-mono text-slate-900 break-all leading-none">
+                      QR SIMPLE BOLIVIA<br/><br/>
+                      [ {qrIntentData.paymentDetails?.gloss} ]<br/><br/>
+                      Bs {Number(paymentForm.amount).toFixed(2)}
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-cyan-400 font-mono block">
+                    Escanea con banca móvil BCP, BNB, Banco Unión o GanaMóvil
+                  </span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-slate-400 font-mono mb-1">REFERENCIA / NÚMERO DE VOUCHER</label>
+                <input
+                  type="text"
+                  placeholder="Ej. QR-994218 / Voucher POS 0041"
+                  value={paymentForm.transactionReference}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, transactionReference: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 font-mono mb-1">NOTAS U OBSERVACIONES</label>
+                <textarea
+                  rows={2}
+                  placeholder="Notas adicionales sobre la liquidación..."
+                  value={paymentForm.notes}
+                  onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setPaymentTrip(null)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingPayment}
+                  className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold rounded-xl shadow-lg shadow-cyan-500/20 transition disabled:opacity-50"
+                >
+                  {submittingPayment ? 'Confirmando...' : 'Confirmar Cobro'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }
