@@ -18,6 +18,7 @@ import { CorporateReportsModule } from './corporate-reports/corporate-reports.mo
 import { DriversModule } from './drivers/drivers.module';
 import { PaymentsModule } from './payments/payments.module';
 import { CorporateModule } from './corporate/corporate.module';
+import { CallsModule } from './calls/calls.module';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 
 @Module({
@@ -41,6 +42,7 @@ import { AuditInterceptor } from './common/interceptors/audit.interceptor';
     DriversModule,
     PaymentsModule,
     CorporateModule,
+    CallsModule,
   ],
   // Guards y Filtros globales: Rate-limiting, JWT (auth), Roles (authz), Interceptor de Auditoría
   providers: [

@@ -61,5 +61,45 @@ services:
     labels:
       - "coolify.managed=true"
 
+  asterisk:
+    build:
+      context: ./infrastructure/asterisk
+    ports:
+      - "5060:5060/udp"
+      - "5060:5060/tcp"
+      - "8088:8088"
+      - "5038:5038"
+      - "10000-10100:10000-10100/udp"
+    volumes:
+      - recordings-data:/var/spool/asterisk/monitor
+    labels:
+      - "coolify.managed=true"
+
+  telephony:
+    build:
+      context: .
+      dockerfile: services/telephony/Dockerfile
+    ports:
+      - "3003:3003"
+    depends_on:
+      - api
+      - realtime
+      - asterisk
+    environment:
+      PORT: 3003
+      API_URL: http://api:3000/api
+      REALTIME_URL: http://realtime:3002
+      ASTERISK_ARI_URL: http://asterisk:8088/ari
+      ASTERISK_ARI_USER: radiotaxi_ari
+      ASTERISK_ARI_PASS: RadioTaxiAriPass2026!
+      ASTERISK_AMI_HOST: asterisk
+      ASTERISK_AMI_PORT: 5038
+      ASTERISK_AMI_USER: radiotaxi_ami
+      ASTERISK_AMI_PASS: RadioTaxiAmiSecret2026!
+    labels:
+      - "coolify.managed=true"
+
 volumes:
   postgres-data: {}
+  recordings-data: {}
+

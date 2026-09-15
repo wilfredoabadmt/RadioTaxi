@@ -1,8 +1,10 @@
 import { useEffect, useState, ReactNode } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
+import { io as createSocketClient, Socket } from 'socket.io-client';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
+import IncomingCallModal from '../telephony/IncomingCallModal';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -21,6 +23,7 @@ export default function AppLayout({
 }: AppLayoutProps) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [activeCall, setActiveCall] = useState<any | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -42,6 +45,40 @@ export default function AppLayout({
       }
     }
   }, [router]);
+
+  // Escucha de llamadas entrantes vía Socket en segundo plano
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) return;
+
+    const realtimeUrl = process.env.NEXT_PUBLIC_REALTIME_URL || 'http://localhost:3002';
+    let socket: Socket | null = null;
+
+    try {
+      socket = createSocketClient(realtimeUrl, {
+        auth: { token },
+        transports: ['websocket', 'polling'],
+      });
+
+      socket.on('call:incoming', (callData: any) => {
+        console.log('[AppLayout] 📞 Alerta de llamada entrante recibida:', callData);
+        setActiveCall(callData);
+      });
+
+      socket.on('call:ended', (endedData: any) => {
+        setActiveCall((curr: any) => (curr?.callUuid === endedData?.callUuid ? null : curr));
+      });
+    } catch (err) {
+      console.error('[AppLayout] Error conectando socket de llamadas:', err);
+    }
+
+    return () => {
+      if (socket) {
+        socket.disconnect();
+      }
+    };
+  }, [isAuthenticated]);
 
   if (!isAuthenticated) {
     return (
@@ -78,6 +115,18 @@ export default function AppLayout({
             {children}
           </main>
         </div>
+
+        {/* Modal Pop-up de Llamada Entrante con 1-Click Despacho */}
+        {activeCall && (
+          <IncomingCallModal
+            call={activeCall}
+            onClose={() => setActiveCall(null)}
+            onTripCreated={(createdTrip) => {
+              if (onRefresh) onRefresh();
+              router.push('/');
+            }}
+          />
+        )}
       </div>
     </>
   );

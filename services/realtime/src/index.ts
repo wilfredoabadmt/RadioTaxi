@@ -559,6 +559,30 @@ io.on('connection', async (socket: Socket) => {
     }
   });
 
+  // ---------------------------------------------------------------------------
+  // Telefonía VoIP / Asterisk — Difusión en tiempo real de llamadas
+  // ---------------------------------------------------------------------------
+  socket.on('call:incoming', (data: any) => {
+    const companyId = data.companyId || 1;
+    console.log(`[realtime] 📞 Llamada entrante de ${data.fromNumber} (UUID: ${data.callUuid})`);
+    io.to(`company:${companyId}`).emit('call:incoming', data);
+    io.emit('call:incoming', data); // Fallback para despachadores sin sala explícita
+  });
+
+  socket.on('call:answered', (data: any) => {
+    const companyId = data.companyId || 1;
+    console.log(`[realtime] 📞 Llamada contestada (UUID: ${data.callUuid})`);
+    io.to(`company:${companyId}`).emit('call:answered', data);
+    io.emit('call:answered', data);
+  });
+
+  socket.on('call:ended', (data: any) => {
+    const companyId = data.companyId || 1;
+    console.log(`[realtime] 📞 Llamada finalizada (UUID: ${data.callUuid}, ${data.durationSeconds}s)`);
+    io.to(`company:${companyId}`).emit('call:ended', data);
+    io.emit('call:ended', data);
+  });
+
   socket.on('disconnect', () => {
     console.log(`[realtime] Cliente desconectado: ${socket.id}`);
   });
