@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import AppLayout from '../components/layout/AppLayout';
+import { handleAuthExpired } from '../utils/api';
 
 const getApiBaseUrl = () => {
   if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
@@ -35,6 +36,11 @@ export default function ReportsPage() {
       const res = await fetch(`${baseUrl}/reports`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
+      if (res.status === 401) {
+        handleAuthExpired();
+        return;
+      }
 
       if (res.ok) {
         setReports(await res.json());

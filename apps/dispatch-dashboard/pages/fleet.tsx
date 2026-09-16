@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import AppLayout from '../components/layout/AppLayout';
+import { handleAuthExpired } from '../utils/api';
 
 const getApiBaseUrl = () => {
   if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
@@ -79,6 +80,11 @@ export default function FleetPage() {
         fetch(`${baseUrl}/vehicles`, { headers }),
         fetch(`${baseUrl}/drivers`, { headers }),
       ]);
+
+      if (vRes.status === 401 || dRes.status === 401) {
+        handleAuthExpired();
+        return;
+      }
 
       if (!vRes.ok || !dRes.ok) {
         throw new Error('Error al cargar datos de la flota');

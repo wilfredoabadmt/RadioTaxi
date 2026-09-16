@@ -2,6 +2,7 @@ import { useEffect, useState, ReactNode } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { io as createSocketClient, Socket } from 'socket.io-client';
+import { getRealtimeUrl, handleAuthExpired } from '../../utils/api';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import IncomingCallModal from '../telephony/IncomingCallModal';
@@ -52,13 +53,20 @@ export default function AppLayout({
     const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
     if (!token) return;
 
-    const realtimeUrl = process.env.NEXT_PUBLIC_REALTIME_URL || 'http://localhost:3002';
+    const realtimeUrl = getRealtimeUrl();
     let socket: Socket | null = null;
 
     try {
       socket = createSocketClient(realtimeUrl, {
         auth: { token },
         transports: ['websocket', 'polling'],
+      });
+
+      socket.on('connect_error', (err: any) => {
+        const msg = String(err?.message || '').toLowerCase();
+        if (msg.includes('unauthorized') || msg.includes('jwt') || msg.includes('token') || err?.data?.status === 401) {
+          handleAuthExpired();
+        }
       });
 
       socket.on('call:incoming', (callData: any) => {

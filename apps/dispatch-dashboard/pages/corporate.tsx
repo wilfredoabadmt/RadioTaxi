@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import AppLayout from '../components/layout/AppLayout';
+import { handleAuthExpired } from '../utils/api';
 
 const getApiBaseUrl = () => {
   if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
@@ -114,6 +115,11 @@ export default function CorporatePage() {
         fetch(`${baseUrl}/corporate/cost-centers`, { headers }),
         fetch(`${baseUrl}/corporate/reservations`, { headers }),
       ]);
+
+      if (accRes.status === 401 || costRes.status === 401 || resRes.status === 401) {
+        handleAuthExpired();
+        return;
+      }
 
       if (accRes.ok) setAccounts(await accRes.json());
       if (costRes.ok) setCostCenters(await costRes.json());

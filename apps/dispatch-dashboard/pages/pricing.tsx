@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import AppLayout from '../components/layout/AppLayout';
+import { handleAuthExpired } from '../utils/api';
 
 const getApiBaseUrl = () => {
   if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
@@ -138,6 +139,11 @@ export default function PricingPage() {
         fetch(`${baseUrl}/pricing/rules`, { headers }),
         fetch(`${baseUrl}/pricing/geofences`, { headers }),
       ]);
+
+      if (rulesRes.status === 401 || geoRes.status === 401) {
+        handleAuthExpired();
+        return;
+      }
 
       if (rulesRes.ok) {
         const rulesData = await rulesRes.json();

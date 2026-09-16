@@ -4,6 +4,7 @@ import type { Socket } from 'socket.io-client';
 import AppLayout from '../components/layout/AppLayout';
 import MapPlaceholder from '../components/MapPlaceholder';
 import type { VehicleDTO, TripRequestDTO } from '@shared/types/src';
+import { handleAuthExpired } from '../utils/api';
 
 // Cargar mapa Leaflet en el cliente para evitar problemas de SSR
 const DispatchMapClient = dynamic(() => import('../components/DispatchMapClient'), {
@@ -82,6 +83,11 @@ export default function Home() {
         fetch(`${baseUrl}/trip-requests`, { headers }),
         fetch(`${baseUrl}/vehicles`, { headers }),
       ]);
+
+      if (tripsRes.status === 401 || vehiclesRes.status === 401) {
+        handleAuthExpired();
+        return;
+      }
 
       if (!tripsRes.ok || !vehiclesRes.ok) {
         throw new Error('Error al sincronizar datos del servidor');
@@ -163,6 +169,13 @@ export default function Home() {
 
       socketInstance.on('connect', () => {
         setRealtimeConnected(true);
+      });
+
+      socketInstance.on('connect_error', (err: any) => {
+        const msg = String(err?.message || '').toLowerCase();
+        if (msg.includes('unauthorized') || msg.includes('jwt') || msg.includes('token') || err?.data?.status === 401) {
+          handleAuthExpired();
+        }
       });
 
       socketInstance.on('disconnect', () => {

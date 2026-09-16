@@ -12,7 +12,13 @@ export default function Login() {
   const router = useRouter();
 
   useEffect(() => {
-    // Si ya está logueado, redirigir al index
+    if (router.query.expired) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      setError('Tu sesión ha expirado o las credenciales no son válidas. Por favor, inicia sesión nuevamente.');
+      return;
+    }
+    // Si ya está logueado y no viene por expiración, redirigir al index
     if (localStorage.getItem('token')) {
       router.push('/');
     }

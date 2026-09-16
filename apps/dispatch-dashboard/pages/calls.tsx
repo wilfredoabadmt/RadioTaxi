@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import AppLayout from '../components/layout/AppLayout';
+import { handleAuthExpired } from '../utils/api';
 
 const getApiBaseUrl = () => {
   if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
@@ -30,6 +31,11 @@ export default function CallsPage() {
       const res = await fetch(`${baseUrl}/calls/history?limit=50`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
+      if (res.status === 401) {
+        handleAuthExpired();
+        return;
+      }
 
       if (!res.ok) throw new Error('Error al cargar historial de llamadas');
       const data = await res.json();
