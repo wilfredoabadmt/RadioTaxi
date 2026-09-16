@@ -16,8 +16,9 @@ RUN npm config set fetch-retries 5 \
 COPY apps/dispatch-dashboard/package.json apps/dispatch-dashboard/package-lock.json* ./
 RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 
-# 2) tsconfig base (referenciado como ../../tsconfig.base.json)
+# 2) tsconfig base (referenciado como ../../tsconfig.base.json) y tipos compartidos (@shared)
 COPY tsconfig.base.json /app/tsconfig.base.json
+COPY packages/shared /app/packages/shared
 
 # 3) Código fuente del dashboard
 COPY apps/dispatch-dashboard/ ./
